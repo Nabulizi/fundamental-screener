@@ -1,5 +1,7 @@
 # Stock Scanner
 
+[![CI](https://github.com/Nabulizi/stock-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/Nabulizi/stock-scanner/actions/workflows/ci.yml)
+
 A small Next.js web app that compares fundamentals across a watchlist of stock
 tickers. Enter one or more tickers and get a sortable table of industry, market
 cap, 52-week range, trailing P/E, and dividend yield.
