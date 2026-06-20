@@ -1,0 +1,59 @@
+import type { ScanRow } from './types';
+import { formatMarketCap, formatCurrency, formatPercent, formatPe, NA } from './format';
+import { clampFraction } from './range';
+
+const HEADERS = [
+  'Ticker',
+  'Company',
+  'Industry',
+  'Market Cap',
+  'Price',
+  '52W Low',
+  '52W High',
+  '52W Position',
+  'P/E',
+  'Dividend Yield',
+  'Retrieved At (UTC)'
+];
+
+/** RFC 4180 field escaping: quote fields containing comma, quote, or newline. */
+export function escapeCsvField(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function rangePositionCell(position: number | null | undefined): string {
+  if (position == null || !Number.isFinite(position)) return NA;
+  return formatPercent(clampFraction(position) * 100);
+}
+
+/**
+ * Build a CSV of the displayed rows. Values are formatted exactly as shown in
+ * the UI (B/M/T, currency, percentages), unavailable values are written as
+ * "N/A", and each row carries its own retrieval timestamp. Rows are emitted in
+ * the order given (i.e. respect the current filter + sort).
+ */
+export function toCsv(rows: ScanRow[]): string {
+  const lines: string[] = [HEADERS.map(escapeCsvField).join(',')];
+
+  for (const r of rows) {
+    const cells = [
+      r.ticker,
+      r.companyName ?? NA,
+      r.industry ?? NA,
+      formatMarketCap(r.marketCap, r.currency),
+      formatCurrency(r.currentPrice ?? null, r.currency),
+      formatCurrency(r.week52Low, r.currency),
+      formatCurrency(r.week52High, r.currency),
+      rangePositionCell(r.rangePosition),
+      formatPe(r.trailingPE),
+      formatPercent(r.dividendYieldPercent),
+      r.retrievedAt
+    ];
+    lines.push(cells.map((c) => escapeCsvField(String(c))).join(','));
+  }
+
+  return lines.join('\r\n');
+}
