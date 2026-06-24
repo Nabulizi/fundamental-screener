@@ -100,8 +100,9 @@ optional.
   Fundamental, ×1 Timing) split into Strength (positives) and Risk (negatives).
   Hard floors force a "Weak" tier: a −1 on Earnings Quality or Leverage (a Tier 1
   elimination), or a Risk Score ≥ 8. Adjustments: P/E compression is neutralized
-  for cyclicals (semis/autos); D/E is neutralized for financials and negative
-  book equity; a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  for cyclicals (semis/autos); D/E is neutralized for financials and for
+  buyback-distorted equity (negative or D/E > 10, see `EXTREME_DE_RATIO`); a
+  mega-cap ($200B+) near its 52-week high is capped at Moderate.
   Tiers by Strength: 12+ Strong, 7–11 Moderate, <7 Weak. The breakdown +
   Strength/Risk/flags are visible per-row via an expandable detail row.
 - `SortKey` includes `'score'` which is not a `ScanRow` field — `sortRows`

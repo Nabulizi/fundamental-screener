@@ -87,6 +87,16 @@ describe('computeBreakdown', () => {
     expect(b.leverage).toBe(0);
   });
 
+  it('neutral (0) when D/E is extremely high (buyback-shrunken equity base)', () => {
+    // MCD reports a large positive D/E (~40) because equity is near zero, not because
+    // debt is huge — neutralize rather than disqualify.
+    expect(computeBreakdown(blankRow({ debtToEquity: 40.64 })).leverage).toBe(0);
+  });
+
+  it('still flags genuinely leveraged companies in the 2–10 band', () => {
+    expect(computeBreakdown(blankRow({ debtToEquity: 4 })).leverage).toBe(-1);
+  });
+
   it('neutral (0) on high D/E for a financial (leverage is structural)', () => {
     const b = computeBreakdown(blankRow({ industry: 'Financial Services', debtToEquity: 3.0 }));
     expect(b.leverage).toBe(0);
@@ -417,6 +427,25 @@ describe('scoreRow', () => {
     expect(result.flags.disqualified).toBe(false); // not a Tier 1 elimination
   });
 
+  it('does not disqualify MCD for its real (extreme positive) D/E of 40.64', () => {
+    const row = blankRow({
+      industry: 'Hotels, Restaurants & Leisure',
+      marketCap: 193_000_000_000,
+      trailingPE: 22.3,
+      forwardPE: 20.71,
+      fcfYieldPercent: 3.64,
+      revenueGrowthTTM: 6.77,
+      debtToEquity: 40.64,     // real MCD value — equity shrunk by buybacks
+      evToEbitda: 17.66,
+      rangePosition: 0.07,
+      ytdReturn: -11.11,
+      dividendYieldPercent: 2.74,
+    });
+    const result = scoreRow(row);
+    expect(result.breakdown.leverage).toBe(0);     // neutralized, not −1
+    expect(result.flags.disqualified).toBe(false); // no longer a false Tier 1 elimination
+  });
+
   it('flags a cyclical near its highs and neutralizes its compression', () => {
     // MU-style: huge compression off peak earnings, extended price
     const row = blankRow({
@@ -451,6 +480,10 @@ describe('criterionEvidence', () => {
 
   it('annotates neutralized leverage for negative book equity', () => {
     expect(criterionEvidence(blankRow({ debtToEquity: -4 }), 'leverage')).toContain('neg. equity — neutralized');
+  });
+
+  it('annotates neutralized leverage for an extreme positive D/E', () => {
+    expect(criterionEvidence(blankRow({ debtToEquity: 40.64 }), 'leverage')).toContain('buyback-distorted — neutralized');
   });
 
   it('shows Fwd vs TTM for P/E compression, with cyclical note', () => {

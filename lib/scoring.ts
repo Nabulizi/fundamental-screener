@@ -91,6 +91,15 @@ export const RISK_FLOOR = 8;
 /** Mega-cap cutoff (raw currency units) for the crowding overlay. */
 export const MEGA_CAP_THRESHOLD = 200_000_000_000;
 
+/**
+ * D/E above this is treated as distorted (a near-zero equity base from years of
+ * buybacks blows the ratio up), so it's neutralized rather than flagged as
+ * dangerous — same rationale as negative book equity. EV/EBITDA carries the
+ * real leverage read in these cases. A genuinely over-leveraged company sits in
+ * the 2–10 band and still scores −1.
+ */
+export const EXTREME_DE_RATIO = 10;
+
 /** Tier weight for each criterion, ordered by significance. */
 export const CRITERION_WEIGHT: Record<keyof ScoreBreakdown, number> = {
   earningsQuality: 3,
@@ -175,11 +184,12 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
   }
 
   // #2 — Leverage: D/E < 1.0 → +1, > 2.0 → −1.
-  // Neutralized (0) when D/E is negative (buyback-driven negative book equity
-  // makes the ratio meaningless) or the company is a financial (leverage is
-  // structural, not a red flag). Trust EV/EBITDA for those instead.
+  // Neutralized (0) when the ratio is distorted — negative book equity or an
+  // extreme positive value (both from buybacks shrinking the equity base) — or
+  // when the company is a financial (leverage is structural). Trust EV/EBITDA
+  // for those instead.
   let leverage: -1 | 0 | 1 = 0;
-  if (de != null && de >= 0 && !isFinancialIndustry(row.industry)) {
+  if (de != null && de >= 0 && de <= EXTREME_DE_RATIO && !isFinancialIndustry(row.industry)) {
     leverage = de < 1.0 ? 1 : de > 2.0 ? -1 : 0;
   }
 
@@ -345,6 +355,7 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
       if (de == null) return 'no data';
       if (isFinancialIndustry(row.industry)) return `D/E ${formatRatio(de)} · financial — neutralized`;
       if (de < 0) return `D/E ${formatRatio(de)} · neg. equity — neutralized`;
+      if (de > EXTREME_DE_RATIO) return `D/E ${formatRatio(de)} · buyback-distorted — neutralized`;
       return `D/E ${formatRatio(de)}`;
     case 'revenueGrowth':
       return rev != null ? `${formatReturn(rev)} YoY` : 'no data';
@@ -377,7 +388,7 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
  */
 export const CRITERION_BENCHMARK: Record<keyof ScoreBreakdown, { positive: string; negative: string }> = {
   earningsQuality: { positive: 'FCF Yield > Earnings Yield by 1pp+', negative: 'FCF below EY by 1pp+, or FCF < 0' },
-  leverage: { positive: 'D/E < 1.0', negative: 'D/E > 2.0 (neutral: financials, neg. equity)' },
+  leverage: { positive: 'D/E < 1.0', negative: 'D/E 2.0–10 (neutral: financials, neg./>10 equity)' },
   revenueGrowth: { positive: '> 10% YoY', negative: '< 0% (declining)' },
   fcfYieldLevel: { positive: '> 5%', negative: '< 2%' },
   peCompression: { positive: 'Fwd < TTM (neutral: cyclicals)', negative: 'Fwd > TTM' },

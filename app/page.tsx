@@ -434,7 +434,7 @@ export default function Page() {
             <h4>Adjustments</h4>
             <ul className="tier-list">
               <li><strong>Cyclicals (semis, autos):</strong> P/E compression is neutralized — a low forward P/E off peak earnings is a trap, not durable growth.</li>
-              <li><strong>Leverage:</strong> D/E is neutralized for financials (leverage is structural) and when book equity is negative from buybacks (the ratio is noise).</li>
+              <li><strong>Leverage:</strong> D/E is neutralized for financials (leverage is structural) and when the ratio is buyback-distorted — negative or extremely high (&gt;10) book equity makes it noise; EV/EBITDA carries the real read.</li>
               <li><strong>Crowding:</strong> a mega-cap ($200B+) trading near its 52-week high is capped at Moderate — already widely owned.</li>
             </ul>
 
@@ -451,7 +451,7 @@ export default function Page() {
                 earnings yield, cash flows confirm reported earnings. Your fraud filter.
                 <em>+3 if FCF Yield &gt; EY by 1pp+, −3 if below.</em></li>
               <li><strong>Leverage (D/E)</strong> <em className="tier-tag">×3</em> — Permanent capital loss prevention. A great business with fatal
-                debt goes to zero. <em>+3 if &lt;1.0, −3 if &gt;2.0. Neutralized for financials and for negative book equity (buyback-distorted).</em></li>
+                debt goes to zero. <em>+3 if &lt;1.0, −3 if 2.0–10. Neutralized for financials and for buyback-distorted equity (negative or D/E &gt; 10).</em></li>
               <li><strong>Revenue Growth</strong> <em className="tier-tag">×2</em> — The foundation of all forward estimates. Declining revenue makes
                 every other bullish signal suspect. <em>+2 if &gt;10%, −2 if negative.</em></li>
               <li><strong>FCF Yield Level</strong> <em className="tier-tag">×2</em> — Core value signal. Once you know earnings are real,
