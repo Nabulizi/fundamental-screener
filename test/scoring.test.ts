@@ -7,11 +7,14 @@ import {
   tierFor,
   scoreRow,
   breakdownTooltip,
+  criterionEvidence,
   isDisqualified,
   isCrowded,
   isCyclicalIndustry,
   isFinancialIndustry,
   CRITERION_WEIGHT,
+  CRITERION_BENCHMARK,
+  CRITERION_KEYS,
   MEGA_CAP_THRESHOLD,
   type ScoreBreakdown,
   type RowFlags,
@@ -428,6 +431,66 @@ describe('scoreRow', () => {
     expect(result.flags.cyclical).toBe(true);
     expect(result.breakdown.peCompression).toBe(0); // not rewarded as growth
     expect(result.flags.crowding).toBe(true);       // mega-cap near high
+  });
+});
+
+describe('criterionEvidence', () => {
+  it('shows FCF vs Earnings Yield for earnings quality', () => {
+    expect(criterionEvidence(blankRow({ trailingPE: 20, fcfYieldPercent: 7 }), 'earningsQuality'))
+      .toBe('FCF 7.00% vs EY 5.00%');
+  });
+
+  it('shows the D/E ratio for leverage', () => {
+    expect(criterionEvidence(blankRow({ debtToEquity: 0.8 }), 'leverage')).toBe('D/E 0.80');
+  });
+
+  it('annotates neutralized leverage for financials', () => {
+    expect(criterionEvidence(blankRow({ industry: 'Financial Services', debtToEquity: 3 }), 'leverage'))
+      .toContain('financial — neutralized');
+  });
+
+  it('annotates neutralized leverage for negative book equity', () => {
+    expect(criterionEvidence(blankRow({ debtToEquity: -4 }), 'leverage')).toContain('neg. equity — neutralized');
+  });
+
+  it('shows Fwd vs TTM for P/E compression, with cyclical note', () => {
+    expect(criterionEvidence(blankRow({ trailingPE: 20, forwardPE: 15 }), 'peCompression'))
+      .toBe('Fwd 15.00 vs TTM 20.00');
+    expect(criterionEvidence(blankRow({ industry: 'Semiconductors', trailingPE: 50, forwardPE: 11 }), 'peCompression'))
+      .toContain('cyclical — neutralized');
+  });
+
+  it('shows revenue growth, FCF level, valuation, position, YTD, yield', () => {
+    expect(criterionEvidence(blankRow({ revenueGrowthTTM: 12.8 }), 'revenueGrowth')).toBe('+12.80% YoY');
+    expect(criterionEvidence(blankRow({ fcfYieldPercent: 7 }), 'fcfYieldLevel')).toBe('7.00%');
+    expect(criterionEvidence(blankRow({ evToEbitda: 10 }), 'valuation')).toBe('EV/EBITDA 10.00');
+    expect(criterionEvidence(blankRow({ rangePosition: 0.3 }), 'pricePosition')).toBe('30% of range');
+    expect(criterionEvidence(blankRow({ ytdReturn: 10 }), 'ytdMomentum')).toBe('+10.00% YTD');
+    expect(criterionEvidence(blankRow({ dividendYieldPercent: 3 }), 'dividendYield')).toBe('3.00%');
+  });
+
+  it('handles dividend coverage and non-payers', () => {
+    expect(criterionEvidence(blankRow({ fcfYieldPercent: 6, dividendYieldPercent: 3 }), 'dividendCoverage'))
+      .toBe('FCF 6.00% vs Div 3.00%');
+    expect(criterionEvidence(blankRow({ dividendYieldPercent: 0 }), 'dividendCoverage')).toBe('no dividend');
+    expect(criterionEvidence(blankRow({ dividendYieldPercent: 0 }), 'dividendYield')).toBe('no dividend');
+  });
+
+  it('says "no data" when inputs are missing', () => {
+    const r = blankRow();
+    expect(criterionEvidence(r, 'earningsQuality')).toBe('no data');
+    expect(criterionEvidence(r, 'revenueGrowth')).toBe('no data');
+    expect(criterionEvidence(r, 'valuation')).toBe('no data');
+    expect(criterionEvidence(r, 'peCompression')).toBe('no data');
+  });
+});
+
+describe('CRITERION_BENCHMARK', () => {
+  it('has a positive and negative threshold for every criterion', () => {
+    for (const k of CRITERION_KEYS) {
+      expect(CRITERION_BENCHMARK[k].positive.length).toBeGreaterThan(0);
+      expect(CRITERION_BENCHMARK[k].negative.length).toBeGreaterThan(0);
+    }
   });
 });
 

@@ -743,10 +743,10 @@ tbody tr:hover {
 
 .breakdown-item {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
+  flex-direction: column;
+  gap: 0.15rem;
   font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.3rem 0.5rem;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.03);
 }
@@ -755,12 +755,38 @@ tbody tr:hover {
 .breakdown-item.bd-neg { background: rgba(248, 113, 113, 0.1); }
 .breakdown-item.bd-zero { opacity: 0.6; }
 
+.bd-head { display: flex; align-items: center; gap: 0.35rem; }
 .bd-label { flex: 1; color: var(--text); }
 .bd-weight { color: var(--muted); font-size: 0.65em; }
 .bd-value { font-weight: 700; min-width: 1.5em; text-align: right; }
 .bd-pos .bd-value { color: #4ade80; }
 .bd-neg .bd-value { color: #f87171; }
 .bd-zero .bd-value { color: var(--muted); }
+.bd-evidence {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Benchmark reference table inside the methodology panel */
+.benchmark-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.78rem;
+}
+.benchmark-table th,
+.benchmark-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.benchmark-table th { color: var(--muted); font-weight: 600; }
+.benchmark-table .bm-weight { text-align: center; color: var(--muted); white-space: nowrap; }
+.benchmark-table .bm-pos { color: #4ade80; }
+.benchmark-table .bm-neg { color: #f87171; }
 
 .breakdown-warning {
   margin-top: 0.5rem;

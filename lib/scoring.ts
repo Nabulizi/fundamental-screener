@@ -1,5 +1,6 @@
 import type { ScanRow } from './types';
 import { clampFraction } from './range';
+import { formatPercent, formatReturn, formatPe, formatRatio } from './format';
 
 // ---------------------------------------------------------------------------
 // Master Scoring Framework (v2) — 10 criteria, weighted by significance tier,
@@ -317,3 +318,72 @@ export function breakdownTooltip(breakdown: ScoreBreakdown): string {
     })
     .join('\n');
 }
+
+/**
+ * Short human-readable "evidence" string for a criterion — the actual figures
+ * that produced its score, so the breakdown is self-explanatory. Mirrors the
+ * data reads in computeBreakdown. Returns "no data" / "no dividend" when the
+ * inputs are unavailable (the criterion scores 0 in those cases).
+ */
+export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): string {
+  const pe = n(row.trailingPE);
+  const fwdPe = n(row.forwardPE);
+  const fcf = n(row.fcfYieldPercent);
+  const rev = n(row.revenueGrowthTTM);
+  const de = n(row.debtToEquity);
+  const ev = n(row.evToEbitda);
+  const div = n(row.dividendYieldPercent);
+  const ytd = n(row.ytdReturn);
+  const pos = row.rangePosition != null ? clampFraction(row.rangePosition) : null;
+
+  switch (key) {
+    case 'earningsQuality':
+      if (fcf != null && pe != null && pe > 0) return `FCF ${formatPercent(fcf)} vs EY ${formatPercent(100 / pe)}`;
+      if (fcf != null && fcf < 0) return `FCF ${formatPercent(fcf)} (negative)`;
+      return 'no data';
+    case 'leverage':
+      if (de == null) return 'no data';
+      if (isFinancialIndustry(row.industry)) return `D/E ${formatRatio(de)} · financial — neutralized`;
+      if (de < 0) return `D/E ${formatRatio(de)} · neg. equity — neutralized`;
+      return `D/E ${formatRatio(de)}`;
+    case 'revenueGrowth':
+      return rev != null ? `${formatReturn(rev)} YoY` : 'no data';
+    case 'fcfYieldLevel':
+      return fcf != null ? formatPercent(fcf) : 'no data';
+    case 'peCompression':
+      if (pe == null || fwdPe == null) return 'no data';
+      return isCyclicalIndustry(row.industry)
+        ? `Fwd ${formatPe(fwdPe)} vs TTM ${formatPe(pe)} · cyclical — neutralized`
+        : `Fwd ${formatPe(fwdPe)} vs TTM ${formatPe(pe)}`;
+    case 'valuation':
+      return ev != null ? `EV/EBITDA ${formatRatio(ev)}` : 'no data';
+    case 'dividendCoverage':
+      if (div == null || div <= 0) return 'no dividend';
+      if (fcf == null) return `Div ${formatPercent(div)} · FCF n/a`;
+      return `FCF ${formatPercent(fcf)} vs Div ${formatPercent(div)}`;
+    case 'pricePosition':
+      return pos != null ? `${Math.round(pos * 100)}% of range` : 'no data';
+    case 'ytdMomentum':
+      return ytd != null ? `${formatReturn(ytd)} YTD` : 'no data';
+    case 'dividendYield':
+      return div != null && div > 0 ? formatPercent(div) : 'no dividend';
+  }
+}
+
+/**
+ * Threshold reference per criterion (what earns +1 vs −1), for the benchmark
+ * table in the methodology panel. Kept here so the displayed benchmarks stay in
+ * lockstep with the logic in computeBreakdown.
+ */
+export const CRITERION_BENCHMARK: Record<keyof ScoreBreakdown, { positive: string; negative: string }> = {
+  earningsQuality: { positive: 'FCF Yield > Earnings Yield by 1pp+', negative: 'FCF below EY by 1pp+, or FCF < 0' },
+  leverage: { positive: 'D/E < 1.0', negative: 'D/E > 2.0 (neutral: financials, neg. equity)' },
+  revenueGrowth: { positive: '> 10% YoY', negative: '< 0% (declining)' },
+  fcfYieldLevel: { positive: '> 5%', negative: '< 2%' },
+  peCompression: { positive: 'Fwd < TTM (neutral: cyclicals)', negative: 'Fwd > TTM' },
+  valuation: { positive: 'EV/EBITDA < 15', negative: '> 25' },
+  dividendCoverage: { positive: 'FCF Yield > Dividend Yield', negative: 'FCF < Dividend (non-payers: 0)' },
+  pricePosition: { positive: '< 40% of 52W range', negative: '> 90% of range' },
+  ytdMomentum: { positive: 'positive YTD', negative: 'negative YTD' },
+  dividendYield: { positive: '> 1.5% (non-payers: 0)', negative: '—' },
+};
