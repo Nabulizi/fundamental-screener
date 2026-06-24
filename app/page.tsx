@@ -228,7 +228,7 @@ export default function Page() {
 
   return (
     <main>
-      <h1>Stock Scanner</h1>
+      <h1>Fundamental Screener</h1>
       <p className="subtitle">
         Compare fundamentals across a watchlist. Enter tickers separated by commas, spaces, or new lines.
       </p>

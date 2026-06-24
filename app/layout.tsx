@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Stock Scanner',
+  title: 'Fundamental Screener',
   description: 'Compare fundamentals across a watchlist of tickers. Not investment advice.'
 };
 

@@ -4,7 +4,7 @@ Guidance for working in this repo. Keep it current when conventions change.
 
 ## Project
 
-Next.js 14 (App Router, TypeScript) stock scanner. A user enters a watchlist of
+Next.js 14 (App Router, TypeScript) fundamental screener. A user enters a watchlist of
 tickers and gets a sortable comparison table of 13 columns (Symbol, Score,
 Mkt Cap, Price, YTD, 52W Range, P/E TTM, P/E Fwd, Div Yld, FCF Yld, Rev Grw,
 D/E, EV/EBITDA) plus a weighted composite scoring system (10 criteria, tier

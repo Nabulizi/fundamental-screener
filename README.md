@@ -1,6 +1,6 @@
-# Stock Scanner
+# Fundamental Screener
 
-[![CI](https://github.com/Nabulizi/stock-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/Nabulizi/stock-scanner/actions/workflows/ci.yml)
+[![CI](https://github.com/Nabulizi/fundamental-screener/actions/workflows/ci.yml/badge.svg)](https://github.com/Nabulizi/fundamental-screener/actions/workflows/ci.yml)
 
 A small Next.js web app that compares fundamentals across a watchlist of stock
 tickers. Enter one or more tickers and get a sortable table of industry, market

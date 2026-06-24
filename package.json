@@ -1,5 +1,5 @@
 {
-  "name": "stock-scanner",
+  "name": "fundamental-screener",
   "version": "0.1.0",
   "private": true,
   "scripts": {
