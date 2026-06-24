@@ -1,4 +1,4 @@
-export const DEFAULT_MAX_TICKERS = 10;
+export const DEFAULT_MAX_TICKERS = 20;
 
 // 1-10 chars, starts with a letter, allows digits, dot and hyphen (e.g. BRK.B, RDS-A).
 const TICKER_RE = /^[A-Z][A-Z0-9.-]{0,9}$/;

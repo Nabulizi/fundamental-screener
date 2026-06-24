@@ -46,7 +46,8 @@ cap, 52-week range, trailing P/E, and dividend yield.
 | --------------------- | ------- | -------------------------------------------- |
 | `FINNHUB_API_KEY`      | —       | Required. Server-only Finnhub key.           |
 | `ALPHAVANTAGE_API_KEY` | —       | Optional. Enables Alpha Vantage failover (server-only). |
-| `MAX_TICKERS`          | `10`    | Max tickers accepted per scan.               |
+| `MAX_TICKERS`          | `20`    | Max tickers accepted per scan (server).      |
+| `NEXT_PUBLIC_MAX_TICKERS` | `20` | Client-side input cap; match `MAX_TICKERS`.  |
 | `CACHE_TTL_SECONDS`    | `60`    | Server cache TTL. `0` disables caching.      |
 
 ### Failover provider (optional)
@@ -139,7 +140,7 @@ stored raw (null when price/range missing or `high ≤ low`) and clamped to 0–
 
 - Finnhub free tier is roughly 60 requests/minute (plan-dependent and subject to
   change). Each ticker uses **three** requests (profile2 + metric + quote), so
-  scans are capped (`MAX_TICKERS`, default 10) with bounded concurrency, and the
+  scans are capped (`MAX_TICKERS`, default 20) with bounded concurrency, and the
   client scans tickers a few at a time. A 429 triggers a single Retry-After-aware
   retry; otherwise that ticker fails on its own without dropping the others.
 - Some metrics (P/E, dividend yield, 52-week range) may be unavailable for
