@@ -2,13 +2,19 @@ import { describe, it, expect } from 'vitest';
 import type { ScanRow } from '@/lib/types';
 import {
   computeBreakdown,
+  computeScores,
   totalScore,
-  convictionTier,
+  tierFor,
   scoreRow,
   breakdownTooltip,
   isDisqualified,
+  isCrowded,
+  isCyclicalIndustry,
+  isFinancialIndustry,
   CRITERION_WEIGHT,
+  MEGA_CAP_THRESHOLD,
   type ScoreBreakdown,
+  type RowFlags,
 } from '@/lib/scoring';
 
 /** Minimal valid ScanRow with all nulls — scores should be all zeros. */
@@ -16,7 +22,7 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
   return {
     ticker: 'TEST',
     companyName: 'Test Co',
-    industry: 'Tech',
+    industry: 'Software',
     marketCap: 1_000_000_000,
     currency: 'USD',
     week52Low: null,
@@ -35,6 +41,8 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
     ...overrides,
   };
 }
+
+const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false };
 
 describe('computeBreakdown', () => {
   it('returns all zeros for a blank row', () => {
@@ -70,6 +78,17 @@ describe('computeBreakdown', () => {
     expect(b.leverage).toBe(-1);
   });
 
+  it('neutral (0) when D/E is negative (buyback-driven negative book equity)', () => {
+    // e.g. McDonald's-style negative equity — the ratio is meaningless, not dangerous
+    const b = computeBreakdown(blankRow({ debtToEquity: -4.2 }));
+    expect(b.leverage).toBe(0);
+  });
+
+  it('neutral (0) on high D/E for a financial (leverage is structural)', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Financial Services', debtToEquity: 3.0 }));
+    expect(b.leverage).toBe(0);
+  });
+
   // --- #3 Revenue Growth (×2) ---
   it('+1 when revenue growth > 10%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: 15 }));
@@ -79,6 +98,11 @@ describe('computeBreakdown', () => {
   it('−1 when revenue growth < 0%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: -5 }));
     expect(b.revenueGrowth).toBe(-1);
+  });
+
+  it('0 when revenue growth between 0 and 10%', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 7 }));
+    expect(b.revenueGrowth).toBe(0);
   });
 
   // --- #4 FCF Yield Level (×2) ---
@@ -110,6 +134,17 @@ describe('computeBreakdown', () => {
 
   it('0 when forward PE == trailing PE', () => {
     const b = computeBreakdown(blankRow({ trailingPE: 15, forwardPE: 15 }));
+    expect(b.peCompression).toBe(0);
+  });
+
+  it('neutralizes compression for cyclicals (semiconductors)', () => {
+    // Big TTM→FWD compression that would be +1 for a non-cyclical
+    const b = computeBreakdown(blankRow({ industry: 'Semiconductors', trailingPE: 50, forwardPE: 11 }));
+    expect(b.peCompression).toBe(0);
+  });
+
+  it('neutralizes compression for automobiles', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Automobiles', trailingPE: 370, forwardPE: 200 }));
     expect(b.peCompression).toBe(0);
   });
 
@@ -174,54 +209,61 @@ describe('computeBreakdown', () => {
   });
 });
 
-describe('totalScore (weighted)', () => {
-  it('sums weighted breakdown values', () => {
+describe('industry classification helpers', () => {
+  it('detects cyclical industries', () => {
+    expect(isCyclicalIndustry('Semiconductors')).toBe(true);
+    expect(isCyclicalIndustry('Automobiles')).toBe(true);
+    expect(isCyclicalIndustry('Software')).toBe(false);
+    expect(isCyclicalIndustry(null)).toBe(false);
+  });
+
+  it('detects financial industries', () => {
+    expect(isFinancialIndustry('Financial Services')).toBe(true);
+    expect(isFinancialIndustry('Banks')).toBe(true);
+    expect(isFinancialIndustry('Insurance')).toBe(true);
+    expect(isFinancialIndustry('Technology')).toBe(false);
+    expect(isFinancialIndustry(null)).toBe(false);
+  });
+});
+
+describe('computeScores (split strength / risk)', () => {
+  it('strength sums only positive weighted signals', () => {
     const breakdown: ScoreBreakdown = {
       earningsQuality: 1,   // ×3 = +3
       leverage: 1,           // ×3 = +3
       revenueGrowth: 1,      // ×2 = +2
       fcfYieldLevel: 1,      // ×2 = +2
-      peCompression: -1,     // ×2 = -2
+      peCompression: -1,     // ×2 = -2 (→ risk)
       valuation: 1,          // ×1 = +1
-      dividendCoverage: 0,   // ×1 =  0
-      pricePosition: -1,     // ×1 = -1
-      ytdMomentum: -1,       // ×1 = -1
-      dividendYield: 0,      // ×1 =  0
+      dividendCoverage: 0,
+      pricePosition: -1,     // ×1 = -1 (→ risk)
+      ytdMomentum: -1,       // ×1 = -1 (→ risk)
+      dividendYield: 0,
     };
-    // 3+3+2+2-2+1+0-1-1+0 = 7
-    expect(totalScore(breakdown)).toBe(7);
+    const { strength, risk } = computeScores(breakdown);
+    expect(strength).toBe(11); // 3+3+2+2+1
+    expect(risk).toBe(4);      // 2+1+1
+    expect(totalScore(breakdown)).toBe(7); // strength − risk
   });
 
-  it('max score is +17', () => {
+  it('max strength is +17', () => {
     const all: ScoreBreakdown = {
-      earningsQuality: 1,
-      leverage: 1,
-      revenueGrowth: 1,
-      fcfYieldLevel: 1,
-      peCompression: 1,
-      valuation: 1,
-      dividendCoverage: 1,
-      pricePosition: 1,
-      ytdMomentum: 1,
-      dividendYield: 1,
+      earningsQuality: 1, leverage: 1, revenueGrowth: 1, fcfYieldLevel: 1,
+      peCompression: 1, valuation: 1, dividendCoverage: 1, pricePosition: 1,
+      ytdMomentum: 1, dividendYield: 1,
     };
-    expect(totalScore(all)).toBe(17);
+    expect(computeScores(all).strength).toBe(17);
+    expect(computeScores(all).risk).toBe(0);
   });
 
-  it('min score is −16 (dividendYield has no negative)', () => {
+  it('max risk is 16 (dividendYield never negative)', () => {
     const all: ScoreBreakdown = {
-      earningsQuality: -1,   // -3
-      leverage: -1,           // -3
-      revenueGrowth: -1,      // -2
-      fcfYieldLevel: -1,      // -2
-      peCompression: -1,      // -2
-      valuation: -1,          // -1
-      dividendCoverage: -1,   // -1
-      pricePosition: -1,      // -1
-      ytdMomentum: -1,        // -1
-      dividendYield: 0,       // can't be -1 in practice, but type allows it
+      earningsQuality: -1, leverage: -1, revenueGrowth: -1, fcfYieldLevel: -1,
+      peCompression: -1, valuation: -1, dividendCoverage: -1, pricePosition: -1,
+      ytdMomentum: -1, dividendYield: 0,
     };
-    expect(totalScore(all)).toBe(-16);
+    expect(computeScores(all).risk).toBe(16);
+    expect(computeScores(all).strength).toBe(0);
   });
 
   it('weights are correct per tier', () => {
@@ -251,47 +293,65 @@ describe('isDisqualified (hard floor rule)', () => {
     expect(isDisqualified(b)).toBe(true);
   });
 
-  it('not disqualified when both are +1', () => {
-    const b = computeBreakdown(blankRow({
-      trailingPE: 20,
-      fcfYieldPercent: 7,
-      debtToEquity: 0.5,
-    }));
+  it('not disqualified when a financial has high D/E (leverage neutralized)', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Financial Services', debtToEquity: 3.0 }));
     expect(isDisqualified(b)).toBe(false);
   });
 
-  it('not disqualified when both are 0', () => {
-    const b = computeBreakdown(blankRow());
+  it('not disqualified when both are +1', () => {
+    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 7, debtToEquity: 0.5 }));
     expect(isDisqualified(b)).toBe(false);
   });
 });
 
-describe('convictionTier (weighted thresholds)', () => {
-  it('high for scores >= 12 when not disqualified', () => {
-    expect(convictionTier(12, false)).toBe('high');
-    expect(convictionTier(17, false)).toBe('high');
+describe('isCrowded (mega-cap near 52W high)', () => {
+  it('true for a mega-cap in the top 10% of its range', () => {
+    expect(isCrowded(blankRow({ marketCap: MEGA_CAP_THRESHOLD, rangePosition: 0.95 }))).toBe(true);
   });
 
-  it('watchlist for scores 7–11 when not disqualified', () => {
-    expect(convictionTier(7, false)).toBe('watchlist');
-    expect(convictionTier(11, false)).toBe('watchlist');
+  it('false for a mega-cap lower in its range', () => {
+    expect(isCrowded(blankRow({ marketCap: 4_000_000_000_000, rangePosition: 0.5 }))).toBe(false);
   });
 
-  it('pass for scores < 7', () => {
-    expect(convictionTier(6, false)).toBe('pass');
-    expect(convictionTier(0, false)).toBe('pass');
-    expect(convictionTier(-5, false)).toBe('pass');
+  it('false for a small-cap near its high', () => {
+    expect(isCrowded(blankRow({ marketCap: 5_000_000_000, rangePosition: 0.98 }))).toBe(false);
+  });
+});
+
+describe('tierFor (neutral signal tiers)', () => {
+  it('strong for strength >= 12 with low risk and no flags', () => {
+    expect(tierFor(12, 0, NO_FLAGS)).toBe('strong');
+    expect(tierFor(17, 2, NO_FLAGS)).toBe('strong');
   });
 
-  it('pass when disqualified even if score >= 12', () => {
-    expect(convictionTier(15, true)).toBe('pass');
-    expect(convictionTier(12, true)).toBe('pass');
+  it('moderate for strength 7–11', () => {
+    expect(tierFor(7, 0, NO_FLAGS)).toBe('moderate');
+    expect(tierFor(11, 4, NO_FLAGS)).toBe('moderate');
+  });
+
+  it('weak for strength < 7', () => {
+    expect(tierFor(6, 0, NO_FLAGS)).toBe('weak');
+    expect(tierFor(0, 0, NO_FLAGS)).toBe('weak');
+  });
+
+  it('weak when disqualified even with high strength', () => {
+    expect(tierFor(15, 3, { ...NO_FLAGS, disqualified: true })).toBe('weak');
+  });
+
+  it('weak when risk >= 8 (hard floor) even with high strength', () => {
+    expect(tierFor(14, 8, NO_FLAGS)).toBe('weak');
+  });
+
+  it('crowding caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(15, 2, { ...NO_FLAGS, crowding: true })).toBe('moderate');
   });
 });
 
 describe('scoreRow', () => {
-  it('returns high conviction for a perfect row', () => {
+  it('returns a strong signal for a high-quality row', () => {
     const row = blankRow({
+      industry: 'Software',
+      marketCap: 5_000_000_000,
       trailingPE: 20,
       forwardPE: 12,
       fcfYieldPercent: 8,
@@ -303,26 +363,25 @@ describe('scoreRow', () => {
       dividendYieldPercent: 3,
     });
     const result = scoreRow(row);
-    // EQ ×3=+3, Lev ×3=+3, RevGr ×2=+2, FCF ×2=+2, PEC ×2=+2,
-    // Val ×1=+1, DivCov ×1=+1, 52W ×1=+1, YTD ×1=+1, DivYld ×1=+1 = 17
-    expect(result.score).toBe(17);
-    expect(result.tier).toBe('high');
-    expect(result.disqualified).toBe(false);
+    expect(result.strengthScore).toBe(17);
+    expect(result.riskScore).toBe(0);
+    expect(result.tier).toBe('strong');
+    expect(result.flags.disqualified).toBe(false);
   });
 
   it('handles all-null metrics gracefully', () => {
     const result = scoreRow(blankRow());
-    expect(result.score).toBe(0);
-    expect(result.tier).toBe('pass');
-    expect(result.disqualified).toBe(false);
+    expect(result.strengthScore).toBe(0);
+    expect(result.riskScore).toBe(0);
+    expect(result.tier).toBe('weak');
+    expect(result.flags.disqualified).toBe(false);
   });
 
-  it('disqualifies a high-scoring row when Earnings Quality fails', () => {
-    // Row would score well on everything except EQ
+  it('forces weak when Earnings Quality fails despite strong fundamentals', () => {
     const row = blankRow({
       trailingPE: 20,
       forwardPE: 12,
-      fcfYieldPercent: 3,   // EQ: 3 - 5 = −2 → −1 → disqualified
+      fcfYieldPercent: 3,   // EQ: 3 − 5 = −2 → −1 → disqualified
       revenueGrowthTTM: 15,
       debtToEquity: 0.5,
       evToEbitda: 10,
@@ -331,27 +390,44 @@ describe('scoreRow', () => {
       dividendYieldPercent: 2,
     });
     const result = scoreRow(row);
-    expect(result.disqualified).toBe(true);
-    expect(result.tier).toBe('pass');
-    // Score should still be calculated (for display) even though disqualified
-    expect(typeof result.score).toBe('number');
+    expect(result.flags.disqualified).toBe(true);
+    expect(result.tier).toBe('weak');
   });
 
-  it('disqualifies when Leverage fails even with otherwise great fundamentals', () => {
+  it('does not penalize a buyback-heavy compounder for negative book equity', () => {
+    // MCD-style: negative D/E, strong cash flows, modest growth
     const row = blankRow({
-      trailingPE: 20,
-      forwardPE: 12,
-      fcfYieldPercent: 8,
-      revenueGrowthTTM: 15,
-      debtToEquity: 3.0,   // Leverage: −1 → disqualified
-      evToEbitda: 10,
-      rangePosition: 0.3,
-      ytdReturn: 10,
-      dividendYieldPercent: 3,
+      industry: 'Hotels, Restaurants & Leisure',
+      marketCap: 190_000_000_000,
+      trailingPE: 22,
+      forwardPE: 20,
+      fcfYieldPercent: 5.5,
+      revenueGrowthTTM: 5,
+      debtToEquity: -8,        // negative equity from buybacks
+      evToEbitda: 16,
+      rangePosition: 0.1,
+      ytdReturn: -11,
+      dividendYieldPercent: 2.75,
     });
     const result = scoreRow(row);
-    expect(result.disqualified).toBe(true);
-    expect(result.tier).toBe('pass');
+    expect(result.breakdown.leverage).toBe(0);     // neutralized, not −1
+    expect(result.flags.disqualified).toBe(false); // not a Tier 1 elimination
+  });
+
+  it('flags a cyclical near its highs and neutralizes its compression', () => {
+    // MU-style: huge compression off peak earnings, extended price
+    const row = blankRow({
+      industry: 'Semiconductors',
+      marketCap: 1_000_000_000_000,
+      trailingPE: 50,
+      forwardPE: 11,
+      rangePosition: 0.95,
+      ytdReturn: 300,
+    });
+    const result = scoreRow(row);
+    expect(result.flags.cyclical).toBe(true);
+    expect(result.breakdown.peCompression).toBe(0); // not rewarded as growth
+    expect(result.flags.crowding).toBe(true);       // mega-cap near high
   });
 });
 

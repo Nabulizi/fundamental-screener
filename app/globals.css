@@ -684,9 +684,9 @@ tbody tr:hover {
   border-radius: 4px;
 }
 
-.tier-badge.tier-high { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
-.tier-badge.tier-watchlist { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
-.tier-badge.tier-pass { background: rgba(248, 113, 113, 0.12); color: #f87171; }
+.tier-badge.tier-strong { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.tier-badge.tier-moderate { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.tier-badge.tier-weak { background: rgba(248, 113, 113, 0.12); color: #f87171; }
 
 /* Score cell coloring */
 .score-cell {
@@ -707,9 +707,22 @@ tbody tr:hover {
 .score-chevron.open { transform: rotate(180deg); }
 .score-flag { margin-left: 3px; font-size: 0.85em; }
 .score-disqualified { text-decoration: line-through; text-decoration-color: var(--danger); }
-.score-high { color: #4ade80; }
-.score-watchlist { color: #fbbf24; }
-.score-pass { color: #f87171; }
+.score-strong { color: #4ade80; }
+.score-moderate { color: #fbbf24; }
+.score-weak { color: #f87171; }
+
+/* Strength / Risk / flag meta line in the expanded breakdown */
+.breakdown-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+}
+.bd-strength { color: #4ade80; font-weight: 600; }
+.bd-risk { color: #f87171; font-weight: 600; }
+.bd-flag { color: var(--muted); cursor: help; }
 
 /* Expandable breakdown row */
 .breakdown-row td {
@@ -794,13 +807,13 @@ tbody tr:hover {
   color: var(--accent);
 }
 
-/* Subtle row tinting by conviction tier */
-tr.row-high { background: rgba(34, 197, 94, 0.06); }
-tr.row-watchlist { background: rgba(251, 191, 36, 0.04); }
-tr.row-pass { /* no tint — default panel */ }
-tr.row-high:hover,
-tr.row-watchlist:hover,
-tr.row-pass:hover { background: var(--panel-2); }
+/* Subtle row tinting by signal tier */
+tr.row-strong { background: rgba(34, 197, 94, 0.06); }
+tr.row-moderate { background: rgba(251, 191, 36, 0.04); }
+tr.row-weak { /* no tint — default panel */ }
+tr.row-strong:hover,
+tr.row-moderate:hover,
+tr.row-weak:hover { background: var(--panel-2); }
 
 /* Methodology & Blind Spots accordion sections */
 .methodology-section,
@@ -859,9 +872,9 @@ tr.row-pass:hover { background: var(--panel-2); }
   flex-shrink: 0;
 }
 
-.tier-dot.tier-high { background: #4ade80; }
-.tier-dot.tier-watchlist { background: #fbbf24; }
-.tier-dot.tier-pass { background: #f87171; }
+.tier-dot.tier-strong { background: #4ade80; }
+.tier-dot.tier-moderate { background: #fbbf24; }
+.tier-dot.tier-weak { background: #f87171; }
 
 .reads-list {
   padding-left: 1.2rem;

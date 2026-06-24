@@ -8,8 +8,10 @@ Next.js 14 (App Router, TypeScript) stock scanner. A user enters a watchlist of
 tickers and gets a sortable comparison table of 13 columns (Symbol, Score,
 Mkt Cap, Price, YTD, 52W Range, P/E TTM, P/E Fwd, Div Yld, FCF Yld, Rev Grw,
 D/E, EV/EBITDA) plus a weighted composite scoring system (10 criteria, tier
-weights ×3/×2/×1, hard floor disqualifier). Informational only — the UI must
-never give buy/sell advice or imply missing data equals zero.
+weights ×3/×2/×1, split into a Strength Score 0–17 and a Risk Score 0–16, with
+hard-floor disqualifiers and cyclical/financial/crowding adjustments).
+Informational only — the UI must never give buy/sell advice or imply missing
+data equals zero; signal tiers are neutral (Strong / Moderate / Weak).
 
 ## Commands
 
@@ -37,9 +39,12 @@ and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`)
 - `lib/scan.ts` — per-ticker orchestration with bounded concurrency + cache.
 - `lib/clientScan.ts` — drives the scan one ticker at a time from the browser for
   real "X of N" progress (one POST per ticker).
-- `lib/scoring.ts` — weighted composite scoring (10 criteria, 3 tier weights,
-  hard floor rule). Pure functions: `computeBreakdown`, `totalScore`, `scoreRow`,
-  `isDisqualified`, `convictionTier`. Max +17, min −16.
+- `lib/scoring.ts` — weighted composite scoring (10 criteria, 3 tier weights),
+  split into a Strength Score (0–17) and Risk Score (0–16). Pure functions:
+  `computeBreakdown`, `computeScores`, `scoreRow`, `isDisqualified`, `isCrowded`,
+  `tierFor`, plus `isCyclicalIndustry`/`isFinancialIndustry`. Neutral tiers:
+  `'strong' | 'moderate' | 'weak'`. `totalScore` (strength − risk) is retained
+  as a convenience.
 - `lib/circuitBreaker.ts` — per-ticker failure tracking; skips after 3 failures
   for 60 s cooldown.
 - `lib/fearGreed.ts` + `app/api/feargreed/route.ts` — CNN Fear & Greed badge.
@@ -92,9 +97,12 @@ optional.
   is fetched first, `GLOBAL_QUOTE` (price) is best-effort so a throttled price
   call never discards the fundamentals.
 - **Scoring system:** `lib/scoring.ts` uses tier weights (×3 Survival, ×2
-  Fundamental, ×1 Timing). A −1 on Earnings Quality or Leverage (weighted −3)
-  triggers a hard floor disqualifier — the stock is forced to "Pass" regardless
-  of total. The breakdown is visible per-row via an expandable detail row.
-  Thresholds: 12+ High Conviction, 7–11 Watchlist, <7 Pass.
+  Fundamental, ×1 Timing) split into Strength (positives) and Risk (negatives).
+  Hard floors force a "Weak" tier: a −1 on Earnings Quality or Leverage (a Tier 1
+  elimination), or a Risk Score ≥ 8. Adjustments: P/E compression is neutralized
+  for cyclicals (semis/autos); D/E is neutralized for financials and negative
+  book equity; a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  Tiers by Strength: 12+ Strong, 7–11 Moderate, <7 Weak. The breakdown +
+  Strength/Risk/flags are visible per-row via an expandable detail row.
 - `SortKey` includes `'score'` which is not a `ScanRow` field — `sortRows`
   accepts an optional `scoreMap` parameter for this virtual column.

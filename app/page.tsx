@@ -113,7 +113,7 @@ export default function Page() {
     if (!result) return new Map<string, number>();
     const m = new Map<string, number>();
     for (const row of result.rows) {
-      m.set(row.ticker, scoreRow(row).score);
+      m.set(row.ticker, scoreRow(row).strengthScore);
     }
     return m;
   }, [result]);
@@ -387,7 +387,10 @@ export default function Page() {
             <p className="methodology-intro">
               Each stock is evaluated across <strong>10 criteria</strong> drawn from an elite analyst&apos;s
               composite scoring framework. Every criterion produces a raw signal (+1 / 0 / −1), then
-              is multiplied by its tier weight. Max score: <strong>+17</strong>. Min: <strong>−16</strong>.
+              is multiplied by its tier weight. The positives and negatives are reported separately as a
+              <strong> Strength Score (0–17)</strong> and a <strong>Risk Score (0–16)</strong> — &quot;how good is
+              the setup?&quot; and &quot;how dangerous is it?&quot; are different questions. This is informational
+              only, not a recommendation.
             </p>
 
             <h4>Weight Tiers</h4>
@@ -400,16 +403,24 @@ export default function Page() {
               </tbody>
             </table>
 
-            <h4>Hard Floor Rule</h4>
-            <p>Any stock scoring −1 on Earnings Quality or Leverage (weighted to −3) is <strong>automatically
-            disqualified</strong> — forced to &quot;Pass&quot; regardless of total score. The score ranks what&apos;s good;
-            the floor rule eliminates what&apos;s dangerous.</p>
+            <h4>Hard Floors</h4>
+            <p>A stock is forced to <strong>Weak</strong> regardless of its Strength Score when either:
+            it scores −1 on Earnings Quality or Leverage (a Tier 1 elimination — fake earnings or fatal
+            debt), or its <strong>Risk Score reaches 8+</strong> (too many red flags to offset). The Strength
+            Score ranks what&apos;s good; the floors eliminate what&apos;s dangerous.</p>
 
-            <h4>Conviction Tiers</h4>
+            <h4>Adjustments</h4>
             <ul className="tier-list">
-              <li><span className="tier-dot tier-high" /> <strong>High Conviction (12+ / 17):</strong> multiple bullish signals aligned across all tiers</li>
-              <li><span className="tier-dot tier-watchlist" /> <strong>Watchlist (7–11 / 17):</strong> promising but needs one more catalyst</li>
-              <li><span className="tier-dot tier-pass" /> <strong>Pass (&lt;7 or disqualified):</strong> insufficient evidence or critical red flag</li>
+              <li><strong>Cyclicals (semis, autos):</strong> P/E compression is neutralized — a low forward P/E off peak earnings is a trap, not durable growth.</li>
+              <li><strong>Leverage:</strong> D/E is neutralized for financials (leverage is structural) and when book equity is negative from buybacks (the ratio is noise).</li>
+              <li><strong>Crowding:</strong> a mega-cap ($200B+) trading near its 52-week high is capped at Moderate — already widely owned.</li>
+            </ul>
+
+            <h4>Signal Tiers</h4>
+            <ul className="tier-list">
+              <li><span className="tier-dot tier-strong" /> <strong>Strong (Strength 12+ / 17):</strong> multiple positive signals aligned across all tiers</li>
+              <li><span className="tier-dot tier-moderate" /> <strong>Moderate (Strength 7–11 / 17):</strong> some positive signals; mixed picture</li>
+              <li><span className="tier-dot tier-weak" /> <strong>Weak (Strength &lt;7, Risk 8+, or disqualified):</strong> insufficient evidence or a critical red flag</li>
             </ul>
 
             <h4>The 10 Scoring Reads (ordered by significance)</h4>
@@ -418,13 +429,13 @@ export default function Page() {
                 earnings yield, cash flows confirm reported earnings. Your fraud filter.
                 <em>+3 if FCF Yield &gt; EY by 1pp+, −3 if below.</em></li>
               <li><strong>Leverage (D/E)</strong> <em className="tier-tag">×3</em> — Permanent capital loss prevention. A great business with fatal
-                debt goes to zero. <em>+3 if &lt;1.0, −3 if &gt;2.0.</em></li>
+                debt goes to zero. <em>+3 if &lt;1.0, −3 if &gt;2.0. Neutralized for financials and for negative book equity (buyback-distorted).</em></li>
               <li><strong>Revenue Growth</strong> <em className="tier-tag">×2</em> — The foundation of all forward estimates. Declining revenue makes
                 every other bullish signal suspect. <em>+2 if &gt;10%, −2 if negative.</em></li>
               <li><strong>FCF Yield Level</strong> <em className="tier-tag">×2</em> — Core value signal. Once you know earnings are real,
                 FCF yield tells you if the price is fair. <em>+2 if &gt;5%, −2 if &lt;2%.</em></li>
               <li><strong>P/E Compression</strong> <em className="tier-tag">×2</em> — Analyst expectations, grounded by the fundamentals above.
-                <em>+2 if FWD &lt; TTM, −2 if FWD &gt; TTM.</em></li>
+                <em>+2 if FWD &lt; TTM, −2 if FWD &gt; TTM. Neutralized for cyclicals (peak-earnings trap).</em></li>
               <li><strong>Valuation (EV/EBITDA)</strong> <em className="tier-tag">×1</em> — Leverage-adjusted cross-check on FCF and P/E.
                 <em>+1 if &lt;15, −1 if &gt;25.</em></li>
               <li><strong>Dividend Coverage</strong> <em className="tier-tag">×1</em> — More fundamental than price position — a broken dividend
@@ -446,8 +457,9 @@ export default function Page() {
           <summary>What This Score Cannot Tell You ▾</summary>
           <div className="blind-spots-body">
             <ul>
-              <li><strong>Sector context:</strong> Thresholds are broad-market, not sector-adjusted. A 2.5 D/E may be
-                normal for utilities but alarming for tech.</li>
+              <li><strong>Sector context:</strong> Thresholds are broad-market. Cyclicals and financials get targeted
+                adjustments (above), but most thresholds are not fully sector-relative — a 2.5 D/E may be normal for
+                utilities but alarming for tech.</li>
               <li><strong>Qualitative factors:</strong> Management quality, competitive moats, regulatory risk, and
                 macroeconomic shifts are invisible to any purely quantitative screen.</li>
               <li><strong>Data staleness:</strong> Metrics are trailing (TTM) or most-recent-quarter; forward estimates

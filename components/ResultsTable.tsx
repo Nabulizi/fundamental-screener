@@ -7,8 +7,8 @@ import { formatCurrency, formatMarketCap, formatPe, formatPercent, formatReturn,
 import { rowFreshness, FRESHNESS_LABEL, type Freshness } from '@/lib/freshness';
 import { clampFraction, computeRangePosition } from '@/lib/range';
 import {
-  scoreRow, breakdownTooltip,
-  type ScoredRow, type ConvictionTier,
+  scoreRow,
+  type ScoredRow, type SignalTier,
   CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
 } from '@/lib/scoring';
 
@@ -151,15 +151,15 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
     return map;
   }, [rows]);
 
-  // Conviction tier summary
+  // Signal-strength summary (neutral, non-advisory)
   const tierCounts = useMemo(() => {
-    let high = 0, watchlist = 0, pass = 0;
+    let strong = 0, moderate = 0, weak = 0;
     for (const sr of scoredMap.values()) {
-      if (sr.tier === 'high') high++;
-      else if (sr.tier === 'watchlist') watchlist++;
-      else pass++;
+      if (sr.tier === 'strong') strong++;
+      else if (sr.tier === 'moderate') moderate++;
+      else weak++;
     }
-    return { high, watchlist, pass };
+    return { strong, moderate, weak };
   }, [scoredMap]);
 
   return (
@@ -168,10 +168,10 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
         <span className="table-summary">
           {rows.length} {rows.length === 1 ? 'company' : 'companies'} · Updated {updatedLabel}
         </span>
-        <div className="conviction-summary">
-          <span className="tier-badge tier-high">{tierCounts.high} High Conviction</span>
-          <span className="tier-badge tier-watchlist">{tierCounts.watchlist} Watchlist</span>
-          <span className="tier-badge tier-pass">{tierCounts.pass} Pass</span>
+        <div className="conviction-summary" title="Composite signal strength — informational only, not a recommendation">
+          <span className="tier-badge tier-strong">{tierCounts.strong} Strong</span>
+          <span className="tier-badge tier-moderate">{tierCounts.moderate} Moderate</span>
+          <span className="tier-badge tier-weak">{tierCounts.weak} Weak</span>
         </div>
         <div className="freshness-legend" aria-hidden="true">
           <FreshnessBadge freshness="fresh" /> just fetched
@@ -222,7 +222,7 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
           {rows.map((row) => {
             const freshness = rowFreshness(row, now);
             const scored = scoredMap.get(row.ticker);
-            const tier = scored?.tier ?? 'pass';
+            const tier: SignalTier = scored?.tier ?? 'weak';
             const isExpanded = expanded.has(row.ticker);
             return (
               <>
@@ -240,16 +240,18 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                     return (
                       <td
                         key={`${row.ticker}-${idx}`}
-                        className={`num score-cell score-${tier}${scored.disqualified ? ' score-disqualified' : ''}`}
-                        title={`Click to ${isExpanded ? 'hide' : 'show'} breakdown`}
+                        className={`num score-cell score-${tier}${scored.flags.disqualified ? ' score-disqualified' : ''}`}
+                        title={`Strength ${scored.strengthScore}/17 · Risk ${scored.riskScore}/16 — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
                         onClick={() => toggleExpanded(row.ticker)}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(row.ticker); } }}
                       >
-                        <span className="score-value">{scored.score}</span>
+                        <span className="score-value">{scored.strengthScore}</span>
                         <span className="score-max">/17</span>
-                        {scored.disqualified && <span className="score-flag" title="Disqualified: critical Tier 1 failure">⚠</span>}
+                        {(scored.flags.disqualified || scored.riskScore >= 8) && (
+                          <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/16)`}>⚠</span>
+                        )}
                         <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
                     );
@@ -283,9 +285,19 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                         );
                       })}
                     </div>
-                    {scored.disqualified && (
+                    <div className="breakdown-meta">
+                      <span className="bd-strength">Strength {scored.strengthScore}/17</span>
+                      <span className="bd-risk">Risk {scored.riskScore}/16</span>
+                      {scored.flags.cyclical && (
+                        <span className="bd-flag" title="Cyclical industry — a low forward P/E here often reflects peak earnings, so P/E compression is neutralized.">↻ Cyclical (compression neutralized)</span>
+                      )}
+                      {scored.flags.crowding && (
+                        <span className="bd-flag" title="Mega-cap trading near its 52-week high — already widely owned, capped at Moderate.">◆ Crowded (near 52W high)</span>
+                      )}
+                    </div>
+                    {scored.flags.disqualified && (
                       <div className="breakdown-warning">
-                        ⚠ Disqualified — critical failure in {scored.breakdown.earningsQuality === -1 ? 'Earnings Quality' : ''}{scored.breakdown.earningsQuality === -1 && scored.breakdown.leverage === -1 ? ' and ' : ''}{scored.breakdown.leverage === -1 ? 'Leverage' : ''}. Score cannot offset a Tier 1 elimination.
+                        ⚠ Disqualified — critical failure in {scored.breakdown.earningsQuality === -1 ? 'Earnings Quality' : ''}{scored.breakdown.earningsQuality === -1 && scored.breakdown.leverage === -1 ? ' and ' : ''}{scored.breakdown.leverage === -1 ? 'Leverage' : ''}. A Tier 1 elimination forces a Weak signal regardless of strength.
                       </div>
                     )}
                   </td>

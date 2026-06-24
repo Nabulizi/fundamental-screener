@@ -2,7 +2,8 @@ import type { ScanRow } from './types';
 import { clampFraction } from './range';
 
 // ---------------------------------------------------------------------------
-// Master Scoring Framework — 10 criteria, weighted by significance tier.
+// Master Scoring Framework (v2) — 10 criteria, weighted by significance tier,
+// split into two independent scores instead of one signed total.
 //
 //   Tier 1 (×3) — Survival & Quality:  Earnings Quality, Leverage
 //   Tier 2 (×2) — Fundamental Strength: Revenue Growth, FCF Yield, P/E Compression
@@ -10,23 +11,38 @@ import { clampFraction } from './range';
 //                                        52W Position, YTD, Dividend Yield
 //
 // Each raw signal is +1 / 0 / −1, then multiplied by its tier weight.
-// Max +17, Min −16 (Dividend Yield can't go negative).
+//   • Strength Score = sum of the POSITIVE weighted signals  (0 … +17)
+//   • Risk Score     = sum of the |NEGATIVE| weighted signals (0 … 16)
+// They are reported separately: "how good is the opportunity?" and "how
+// dangerous is the stock?" are different questions and a single net number
+// conflates them.
 //
-// Hard floor rule: −3 on Earnings Quality or Leverage forces tier to "pass"
-// regardless of total score.  These are eliminators, not factors.
+// Refinements over v1:
+//   • Leverage (D/E) is neutralized when book equity is negative (buyback-
+//     distorted D/E is noise) or the company is a financial (leverage is
+//     structural), instead of mechanically flagging it as dangerous.
+//   • P/E compression is neutralized for cyclicals (semis, autos): a low
+//     forward P/E off peak earnings is a trap, not a positive signal.
+//   • A "crowding" flag (mega-cap trading near its 52-week high) caps a stock
+//     at "moderate" — a $200B+ name everyone already owns is a reason for
+//     suspicion, not top billing.
+//
+// Hard floors (force tier to "weak" regardless of strength):
+//   • −1 on Earnings Quality or Leverage (a Tier 1 elimination), or
+//   • Risk Score ≥ 8 (too many red flags to rescue).
 // ---------------------------------------------------------------------------
 
 /** Raw signal before weighting. */
 export interface ScoreBreakdown {
   /** #1 — Earnings quality: FCF Yield vs Earnings Yield. ×3 */
   earningsQuality: -1 | 0 | 1;
-  /** #2 — Leverage: D/E assessment. ×3 */
+  /** #2 — Leverage: D/E assessment (neutralized for negative equity / financials). ×3 */
   leverage: -1 | 0 | 1;
   /** #3 — Revenue growth > 10%. ×2 */
   revenueGrowth: -1 | 0 | 1;
   /** #4 — FCF Yield > 5%. ×2 */
   fcfYieldLevel: -1 | 0 | 1;
-  /** #5 — P/E compression: FWD < TTM. ×2 */
+  /** #5 — P/E compression: FWD < TTM (neutralized for cyclicals). ×2 */
   peCompression: -1 | 0 | 1;
   /** #6 — Valuation: EV/EBITDA. ×1 */
   valuation: -1 | 0 | 1;
@@ -40,17 +56,39 @@ export interface ScoreBreakdown {
   dividendYield: -1 | 0 | 1;
 }
 
-export type ConvictionTier = 'high' | 'watchlist' | 'pass';
+/** Neutral, non-advisory signal-strength label. */
+export type SignalTier = 'strong' | 'moderate' | 'weak';
+
+/** Overlay conditions that adjust the tier without being scored criteria. */
+export interface RowFlags {
+  /** Tier 1 elimination: Earnings Quality or Leverage scored −1. */
+  disqualified: boolean;
+  /** Cyclical industry (semis, autos) — P/E compression was neutralized. */
+  cyclical: boolean;
+  /** Mega-cap trading near its 52-week high — already-discovered, caps at moderate. */
+  crowding: boolean;
+}
 
 export interface ScoredRow {
   row: ScanRow;
-  /** Weighted total score (−16 to +17). */
-  score: number;
   breakdown: ScoreBreakdown;
-  tier: ConvictionTier;
-  /** True when Earnings Quality or Leverage hit −3 (disqualifier). */
-  disqualified: boolean;
+  /** Sum of positive weighted signals. 0 … +17. */
+  strengthScore: number;
+  /** Sum of |negative| weighted signals. 0 … 16. */
+  riskScore: number;
+  flags: RowFlags;
+  tier: SignalTier;
 }
+
+/** Strength score when every criterion is +1. */
+export const MAX_STRENGTH = 17;
+/** Risk score when every (negatable) criterion is −1. */
+export const MAX_RISK = 16;
+/** Risk score at/above which a stock is forced to "weak" regardless of strength. */
+export const RISK_FLOOR = 8;
+
+/** Mega-cap cutoff (raw currency units) for the crowding overlay. */
+export const MEGA_CAP_THRESHOLD = 200_000_000_000;
 
 /** Tier weight for each criterion, ordered by significance. */
 export const CRITERION_WEIGHT: Record<keyof ScoreBreakdown, number> = {
@@ -94,6 +132,22 @@ export const CRITERION_KEYS: (keyof ScoreBreakdown)[] = [
   'dividendYield',
 ];
 
+// Industries where a low forward P/E reflects cyclical peak earnings rather
+// than durable growth — compression is neutralized for these.
+const CYCLICAL_PATTERNS = [/semiconductor/i, /automobile/i, /\bautos?\b/i];
+
+// Industries where leverage is a structural part of the business model, so a
+// high D/E is not a danger signal on its own.
+const FINANCIAL_PATTERNS = [/financ/i, /\bbank/i, /insurance/i, /capital markets/i];
+
+export function isCyclicalIndustry(industry: string | null | undefined): boolean {
+  return industry != null && CYCLICAL_PATTERNS.some((re) => re.test(industry));
+}
+
+export function isFinancialIndustry(industry: string | null | undefined): boolean {
+  return industry != null && FINANCIAL_PATTERNS.some((re) => re.test(industry));
+}
+
 function n(v: number | null | undefined): number | null {
   return v != null && Number.isFinite(v) ? v : null;
 }
@@ -119,9 +173,14 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
     earningsQuality = -1;
   }
 
-  // #2 — Leverage: D/E < 1.0 → +1, > 2.0 → −1
-  const leverage: -1 | 0 | 1 =
-    de != null ? (de < 1.0 ? 1 : de > 2.0 ? -1 : 0) : 0;
+  // #2 — Leverage: D/E < 1.0 → +1, > 2.0 → −1.
+  // Neutralized (0) when D/E is negative (buyback-driven negative book equity
+  // makes the ratio meaningless) or the company is a financial (leverage is
+  // structural, not a red flag). Trust EV/EBITDA for those instead.
+  let leverage: -1 | 0 | 1 = 0;
+  if (de != null && de >= 0 && !isFinancialIndustry(row.industry)) {
+    leverage = de < 1.0 ? 1 : de > 2.0 ? -1 : 0;
+  }
 
   // #3 — Revenue growth: > 10% → +1, < 0% → −1
   const revenueGrowth: -1 | 0 | 1 =
@@ -131,9 +190,12 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
   const fcfYieldLevel: -1 | 0 | 1 =
     fcf != null ? (fcf > 5 ? 1 : fcf < 2 ? -1 : 0) : 0;
 
-  // #5 — P/E Compression: FWD < TTM → +1
-  const peCompression: -1 | 0 | 1 =
-    pe != null && fwdPe != null ? (fwdPe < pe ? 1 : fwdPe > pe ? -1 : 0) : 0;
+  // #5 — P/E Compression: FWD < TTM → +1. Neutralized for cyclicals, where a
+  // low forward P/E signals peak earnings (a trap), not durable growth.
+  let peCompression: -1 | 0 | 1 = 0;
+  if (pe != null && fwdPe != null && !isCyclicalIndustry(row.industry)) {
+    peCompression = fwdPe < pe ? 1 : fwdPe > pe ? -1 : 0;
+  }
 
   // #6 — Valuation: EV/EBITDA < 15 → +1, > 25 → −1
   const valuation: -1 | 0 | 1 =
@@ -173,36 +235,70 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
   };
 }
 
-/** Weighted total across all 10 criteria. Range: −16 to +17. */
-export function totalScore(breakdown: ScoreBreakdown): number {
-  let sum = 0;
+/** Split the weighted breakdown into separate strength and risk totals. */
+export function computeScores(breakdown: ScoreBreakdown): { strength: number; risk: number } {
+  let strength = 0;
+  let risk = 0;
   for (const k of CRITERION_KEYS) {
-    sum += breakdown[k] * CRITERION_WEIGHT[k];
+    const weighted = breakdown[k] * CRITERION_WEIGHT[k];
+    if (weighted > 0) strength += weighted;
+    else if (weighted < 0) risk += -weighted;
   }
-  return sum;
+  return { strength, risk };
 }
 
 /**
- * Returns true when a Tier 1 criterion (Earnings Quality or Leverage) scores
- * −1, meaning its weighted contribution is −3. This is a hard disqualifier —
- * the stock cannot be "high" or "watchlist" regardless of total score.
+ * Net weighted total (strength − risk). Retained as a convenience for callers
+ * that want a single comparable number; the UI uses the split scores.
+ */
+export function totalScore(breakdown: ScoreBreakdown): number {
+  const { strength, risk } = computeScores(breakdown);
+  return strength - risk;
+}
+
+/**
+ * True when a Tier 1 criterion (Earnings Quality or Leverage) scores −1. This
+ * is a hard disqualifier — the stock cannot be "strong" or "moderate".
  */
 export function isDisqualified(breakdown: ScoreBreakdown): boolean {
   return breakdown.earningsQuality === -1 || breakdown.leverage === -1;
 }
 
-export function convictionTier(score: number, disqualified: boolean): ConvictionTier {
-  if (disqualified) return 'pass';
-  if (score >= 12) return 'high';
-  if (score >= 7) return 'watchlist';
-  return 'pass';
+/** Mega-cap trading in the top 10% of its 52-week range. */
+export function isCrowded(row: ScanRow): boolean {
+  const cap = n(row.marketCap);
+  const pos = row.rangePosition != null ? clampFraction(row.rangePosition) : null;
+  return cap != null && cap >= MEGA_CAP_THRESHOLD && pos != null && pos > 0.9;
+}
+
+/**
+ * Map split scores + overlay flags to a neutral signal tier.
+ * Hard floor: disqualified or risk ≥ RISK_FLOOR → "weak" regardless of strength.
+ * Crowding caps a stock at "moderate".
+ */
+export function tierFor(strengthScore: number, riskScore: number, flags: RowFlags): SignalTier {
+  if (flags.disqualified || riskScore >= RISK_FLOOR) return 'weak';
+  if (strengthScore >= 12) return flags.crowding ? 'moderate' : 'strong';
+  if (strengthScore >= 7) return 'moderate';
+  return 'weak';
 }
 
 export function scoreRow(row: ScanRow): ScoredRow {
   const breakdown = computeBreakdown(row);
-  const score = totalScore(breakdown);
-  const disqualified = isDisqualified(breakdown);
-  return { row, score, breakdown, tier: convictionTier(score, disqualified), disqualified };
+  const { strength, risk } = computeScores(breakdown);
+  const flags: RowFlags = {
+    disqualified: isDisqualified(breakdown),
+    cyclical: isCyclicalIndustry(row.industry),
+    crowding: isCrowded(row),
+  };
+  return {
+    row,
+    breakdown,
+    strengthScore: strength,
+    riskScore: risk,
+    flags,
+    tier: tierFor(strength, risk, flags),
+  };
 }
 
 /** Weighted score for a single criterion (for display). */
