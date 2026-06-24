@@ -11,6 +11,7 @@ const MAX_TICKERS = Number(process.env.NEXT_PUBLIC_MAX_TICKERS) || DEFAULT_MAX_T
 import { EMPTY_FILTERS } from '@/lib/filters';
 import { runClientScan, type ScanProgress } from '@/lib/clientScan';
 import { sortRows, type SortDir, type SortKey } from '@/lib/sort';
+import { scoreRow } from '@/lib/scoring';
 import { toCsv } from '@/lib/csv';
 import { serializeShare, parseShare } from '@/lib/shareUrl';
 import type { ScanError, ScanRow } from '@/lib/types';
@@ -108,9 +109,18 @@ export default function Page() {
 
   const preview = useMemo(() => parseTickers(input, MAX_TICKERS), [input]);
   // Displayed order = sorted result rows; CSV export uses exactly this.
+  const scoreMap = useMemo(() => {
+    if (!result) return new Map<string, number>();
+    const m = new Map<string, number>();
+    for (const row of result.rows) {
+      m.set(row.ticker, scoreRow(row).score);
+    }
+    return m;
+  }, [result]);
+
   const displayedRows = useMemo(
-    () => (result ? sortRows(result.rows, sortKey, sortDir) : []),
-    [result, sortKey, sortDir]
+    () => (result ? sortRows(result.rows, sortKey, sortDir, scoreMap) : []),
+    [result, sortKey, sortDir, scoreMap]
   );
 
   function onSort(key: SortKey) {
@@ -366,8 +376,88 @@ export default function Page() {
 
       <p className="disclaimer">
         This tool displays publicly reported fundamentals for informational purposes only. It does not
-        provide buy, sell, or hold recommendations, and unavailable data is shown as “N/A” — never as zero.
+        provide buy, sell, or hold recommendations, and unavailable data is shown as &quot;N/A&quot; — never as zero.
       </p>
+
+      {/* Methodology accordion */}
+      {result && result.rows.length > 0 && (
+        <details className="methodology-section">
+          <summary>How Scoring Works ▾</summary>
+          <div className="methodology-body">
+            <p className="methodology-intro">
+              Each stock is evaluated across <strong>10 criteria</strong> drawn from an elite analyst&apos;s
+              composite scoring framework. Every criterion produces a raw signal (+1 / 0 / −1), then
+              is multiplied by its tier weight. Max score: <strong>+17</strong>. Min: <strong>−16</strong>.
+            </p>
+
+            <h4>Weight Tiers</h4>
+            <table className="weight-table">
+              <thead><tr><th>Tier</th><th>Weight</th><th>Metrics</th><th>Rationale</th></tr></thead>
+              <tbody>
+                <tr><td>Survival &amp; Quality</td><td>×3</td><td>Earnings Quality, Leverage</td><td>A −3 here can mean permanent loss. These are eliminators.</td></tr>
+                <tr><td>Fundamental Strength</td><td>×2</td><td>Revenue Growth, FCF Yield, P/E Compression</td><td>Core business quality — strongly predictive but recoverable if one is weak.</td></tr>
+                <tr><td>Valuation, Timing &amp; Income</td><td>×1</td><td>EV/EBITDA, Div Coverage, 52W Pos, YTD, Div Yield</td><td>Useful context, not convictions on their own.</td></tr>
+              </tbody>
+            </table>
+
+            <h4>Hard Floor Rule</h4>
+            <p>Any stock scoring −1 on Earnings Quality or Leverage (weighted to −3) is <strong>automatically
+            disqualified</strong> — forced to &quot;Pass&quot; regardless of total score. The score ranks what&apos;s good;
+            the floor rule eliminates what&apos;s dangerous.</p>
+
+            <h4>Conviction Tiers</h4>
+            <ul className="tier-list">
+              <li><span className="tier-dot tier-high" /> <strong>High Conviction (12+ / 17):</strong> multiple bullish signals aligned across all tiers</li>
+              <li><span className="tier-dot tier-watchlist" /> <strong>Watchlist (7–11 / 17):</strong> promising but needs one more catalyst</li>
+              <li><span className="tier-dot tier-pass" /> <strong>Pass (&lt;7 or disqualified):</strong> insufficient evidence or critical red flag</li>
+            </ul>
+
+            <h4>The 10 Scoring Reads (ordered by significance)</h4>
+            <ol className="reads-list">
+              <li><strong>Earnings Quality</strong> <em className="tier-tag">×3</em> — Compares FCF Yield to Earnings Yield (100÷P/E). When FCF exceeds
+                earnings yield, cash flows confirm reported earnings. Your fraud filter.
+                <em>+3 if FCF Yield &gt; EY by 1pp+, −3 if below.</em></li>
+              <li><strong>Leverage (D/E)</strong> <em className="tier-tag">×3</em> — Permanent capital loss prevention. A great business with fatal
+                debt goes to zero. <em>+3 if &lt;1.0, −3 if &gt;2.0.</em></li>
+              <li><strong>Revenue Growth</strong> <em className="tier-tag">×2</em> — The foundation of all forward estimates. Declining revenue makes
+                every other bullish signal suspect. <em>+2 if &gt;10%, −2 if negative.</em></li>
+              <li><strong>FCF Yield Level</strong> <em className="tier-tag">×2</em> — Core value signal. Once you know earnings are real,
+                FCF yield tells you if the price is fair. <em>+2 if &gt;5%, −2 if &lt;2%.</em></li>
+              <li><strong>P/E Compression</strong> <em className="tier-tag">×2</em> — Analyst expectations, grounded by the fundamentals above.
+                <em>+2 if FWD &lt; TTM, −2 if FWD &gt; TTM.</em></li>
+              <li><strong>Valuation (EV/EBITDA)</strong> <em className="tier-tag">×1</em> — Leverage-adjusted cross-check on FCF and P/E.
+                <em>+1 if &lt;15, −1 if &gt;25.</em></li>
+              <li><strong>Dividend Coverage</strong> <em className="tier-tag">×1</em> — More fundamental than price position — a broken dividend
+                destroys the investment thesis. <em>+1 if FCF covers dividend, −1 if not. Non-payers: 0.</em></li>
+              <li><strong>52-Week Position</strong> <em className="tier-tag">×1</em> — Entry timing. Technical, not fundamental — belongs after all
+                business quality reads. <em>+1 if &lt;40%, −1 if &gt;90%.</em></li>
+              <li><strong>YTD Momentum</strong> <em className="tier-tag">×1</em> — Weakest fundamental signal. Useful confirmation, not a driver.
+                <em>+1 if positive, −1 if negative.</em></li>
+              <li><strong>Dividend Yield</strong> <em className="tier-tag">×1</em> — Income enhancement only. The least predictive of the 10.
+                <em>+1 if &gt;1.5%. Non-payers: 0. Never negative.</em></li>
+            </ol>
+          </div>
+        </details>
+      )}
+
+      {/* Blind spots disclaimer */}
+      {result && result.rows.length > 0 && (
+        <details className="blind-spots-section">
+          <summary>What This Score Cannot Tell You ▾</summary>
+          <div className="blind-spots-body">
+            <ul>
+              <li><strong>Sector context:</strong> Thresholds are broad-market, not sector-adjusted. A 2.5 D/E may be
+                normal for utilities but alarming for tech.</li>
+              <li><strong>Qualitative factors:</strong> Management quality, competitive moats, regulatory risk, and
+                macroeconomic shifts are invisible to any purely quantitative screen.</li>
+              <li><strong>Data staleness:</strong> Metrics are trailing (TTM) or most-recent-quarter; forward estimates
+                rely on analyst consensus that can change rapidly.</li>
+              <li><strong>Missing data:</strong> If a metric is unavailable (N/A), that criterion scores 0 rather than
+                penalizing or rewarding — this can inflate scores for thinly-covered stocks.</li>
+            </ul>
+          </div>
+        </details>
+      )}
     </main>
   );
 }

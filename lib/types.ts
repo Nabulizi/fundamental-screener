@@ -19,6 +19,14 @@ export interface ScanRow {
   dividendYieldPercent: number | null;
   /** Year-to-date price return as a percentage (e.g. 9.25 means +9.25%). */
   ytdReturn: number | null;
+  /** Free cash flow yield as a percentage (derived from Price/FCF). Null if unavailable. */
+  fcfYieldPercent: number | null;
+  /** Revenue growth TTM year-over-year as a percentage (e.g. 12.76 means 12.76%). */
+  revenueGrowthTTM: number | null;
+  /** Total debt / total equity (quarterly). Null if unavailable. */
+  debtToEquity: number | null;
+  /** Enterprise value / EBITDA (TTM). Non-positive / unavailable is null. */
+  evToEbitda: number | null;
   /** Current price in `currency`. Optional — populated only when the provider quote is available. */
   currentPrice?: number | null;
   /** Position within the 52-week range, 0..1 (low..high). Null when inputs are missing/invalid. */

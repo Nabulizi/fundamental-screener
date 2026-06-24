@@ -15,6 +15,10 @@ function row(ticker: string, marketCap: number | null): ScanRow {
     forwardPE: null,
     dividendYieldPercent: null,
     ytdReturn: null,
+    fcfYieldPercent: null,
+    revenueGrowthTTM: null,
+    debtToEquity: null,
+    evToEbitda: null,
     retrievedAt: '2026-06-19T00:00:00.000Z'
   };
 }

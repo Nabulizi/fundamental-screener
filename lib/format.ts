@@ -73,3 +73,9 @@ export function formatPe(value: number | null): string {
   if (!isUsable(value) || value <= 0) return NA;
   return value.toFixed(2);
 }
+
+/** Format a ratio (e.g. D/E, EV/EBITDA). Null / non-finite -> "N/A". */
+export function formatRatio(value: number | null): string {
+  if (!isUsable(value)) return NA;
+  return value.toFixed(2);
+}

@@ -15,6 +15,10 @@ function row(ticker: string, retrievedAt: string): ScanRow {
     forwardPE: null,
     dividendYieldPercent: null,
     ytdReturn: null,
+    fcfYieldPercent: null,
+    revenueGrowthTTM: null,
+    debtToEquity: null,
+    evToEbitda: null,
     retrievedAt
   };
 }

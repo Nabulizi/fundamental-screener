@@ -16,6 +16,10 @@ function row(ticker: string, source: string): ScanRow {
     forwardPE: null,
     dividendYieldPercent: 1,
     ytdReturn: null,
+    fcfYieldPercent: null,
+    revenueGrowthTTM: null,
+    debtToEquity: null,
+    evToEbitda: null,
     currentPrice: 1.5,
     rangePosition: 0.5,
     retrievedAt: '2026-06-19T00:00:00.000Z'

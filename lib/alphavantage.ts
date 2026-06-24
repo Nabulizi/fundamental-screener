@@ -100,6 +100,11 @@ export function normalizeAlphaVantage(
     dividendYieldPercent: yieldDecimal == null ? null : yieldDecimal * 100,
     // Alpha Vantage OVERVIEW doesn't include YTD return.
     ytdReturn: null,
+    // Alpha Vantage OVERVIEW doesn't supply these metrics.
+    fcfYieldPercent: null,
+    revenueGrowthTTM: null,
+    debtToEquity: null,
+    evToEbitda: null,
     currentPrice,
     rangePosition: computeRangePosition(currentPrice, low, high),
     retrievedAt

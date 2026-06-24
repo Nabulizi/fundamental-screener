@@ -1,5 +1,5 @@
 import type { ScanRow } from './types';
-import { formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, NA } from './format';
+import { formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, formatRatio, NA } from './format';
 import { clampFraction } from './range';
 
 const HEADERS = [
@@ -15,6 +15,10 @@ const HEADERS = [
   'P/E (Fwd)',
   'Dividend Yield',
   'YTD Return',
+  'FCF Yield',
+  'Revenue Growth (TTM)',
+  'D/E',
+  'EV/EBITDA',
   'Retrieved At (UTC)'
 ];
 
@@ -54,6 +58,10 @@ export function toCsv(rows: ScanRow[]): string {
       formatPe(r.forwardPE),
       formatPercent(r.dividendYieldPercent),
       formatReturn(r.ytdReturn),
+      formatPercent(r.fcfYieldPercent),
+      formatReturn(r.revenueGrowthTTM),
+      formatRatio(r.debtToEquity),
+      formatRatio(r.evToEbitda),
       r.retrievedAt
     ];
     lines.push(cells.map((c) => escapeCsvField(String(c))).join(','));

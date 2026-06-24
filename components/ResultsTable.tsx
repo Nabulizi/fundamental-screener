@@ -1,11 +1,16 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useMemo, useState, useCallback } from 'react';
 import type { ScanRow } from '@/lib/types';
 import { type SortDir, type SortKey } from '@/lib/sort';
-import { formatCurrency, formatMarketCap, formatPe, formatPercent, formatReturn, NA } from '@/lib/format';
+import { formatCurrency, formatMarketCap, formatPe, formatPercent, formatReturn, formatRatio, NA } from '@/lib/format';
 import { rowFreshness, FRESHNESS_LABEL, type Freshness } from '@/lib/freshness';
 import { clampFraction, computeRangePosition } from '@/lib/range';
+import {
+  scoreRow, breakdownTooltip,
+  type ScoredRow, type ConvictionTier,
+  CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
+} from '@/lib/scoring';
 
 const FRESHNESS_TITLE: Record<Freshness, string> = {
   fresh: 'Fetched in this scan',
@@ -94,17 +99,19 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
-  // Merged identity column sorts by ticker only. Sorting by company name is
-  // intentionally dropped along with the separate Company column.
-  { key: 'ticker', label: 'Symbol', numeric: false, sortable: true, identity: true, width: '17%' },
-  { key: 'marketCap', label: 'Mkt Cap', numeric: true, sortable: true, width: '11%', render: (r) => formatMarketCap(r.marketCap, r.currency) },
-  { key: 'currentPrice', label: 'Price', numeric: true, sortable: false, width: '11%', render: (r) => formatCurrency(r.currentPrice ?? null, r.currency) },
-  { key: 'ytdReturn', label: 'YTD', numeric: true, sortable: true, width: '11%', render: (r) => formatReturn(r.ytdReturn) },
-  // Range bar is not sortable (it's a composite visual, not a single numeric).
-  { key: 'week52High', label: '52W Range', numeric: false, sortable: false, center: true, width: '17%', render: (r) => <RangeBar row={r} /> },
-  { key: 'trailingPE', label: 'P/E (TTM)', numeric: true, sortable: true, width: '11%', render: (r) => formatPe(r.trailingPE) },
-  { key: 'forwardPE', label: 'P/E (Fwd)', numeric: true, sortable: true, width: '11%', render: (r) => formatPe(r.forwardPE) },
-  { key: 'dividendYieldPercent', label: 'Div Yield', numeric: true, sortable: true, width: '11%', render: (r) => formatPercent(r.dividendYieldPercent) }
+  { key: 'ticker', label: 'Symbol', numeric: false, sortable: true, identity: true, width: '13%' },
+  { key: 'score' as SortKey, label: 'Score', numeric: true, sortable: true, width: '5%', render: () => null /* handled specially */ },
+  { key: 'marketCap', label: 'Mkt Cap', numeric: true, sortable: true, width: '8%', render: (r) => formatMarketCap(r.marketCap, r.currency) },
+  { key: 'currentPrice', label: 'Price', numeric: true, sortable: false, width: '7%', render: (r) => formatCurrency(r.currentPrice ?? null, r.currency) },
+  { key: 'ytdReturn', label: 'YTD', numeric: true, sortable: true, width: '7%', render: (r) => formatReturn(r.ytdReturn) },
+  { key: 'week52High', label: '52W Range', numeric: false, sortable: false, center: true, width: '13%', render: (r) => <RangeBar row={r} /> },
+  { key: 'trailingPE', label: 'P/E TTM', numeric: true, sortable: true, width: '7%', render: (r) => formatPe(r.trailingPE) },
+  { key: 'forwardPE', label: 'P/E Fwd', numeric: true, sortable: true, width: '7%', render: (r) => formatPe(r.forwardPE) },
+  { key: 'dividendYieldPercent', label: 'Div Yld', numeric: true, sortable: true, width: '7%', render: (r) => formatPercent(r.dividendYieldPercent) },
+  { key: 'fcfYieldPercent', label: 'FCF Yld', numeric: true, sortable: true, width: '7%', render: (r) => formatPercent(r.fcfYieldPercent) },
+  { key: 'revenueGrowthTTM', label: 'Rev Grw', numeric: true, sortable: true, width: '7%', render: (r) => formatReturn(r.revenueGrowthTTM) },
+  { key: 'debtToEquity', label: 'D/E', numeric: true, sortable: true, width: '5%', render: (r) => formatRatio(r.debtToEquity) },
+  { key: 'evToEbitda', label: 'EV/EBITDA', numeric: true, sortable: true, width: '7%', render: (r) => formatRatio(r.evToEbitda) }
 ];
 
 function ariaSortValue(active: boolean, dir: SortDir): 'ascending' | 'descending' | 'none' {
@@ -124,12 +131,48 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
   const updatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString() : NA;
   const now = Date.now();
 
+  // Track which rows have their score breakdown expanded
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback((ticker: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
+      return next;
+    });
+  }, []);
+
+  // Pre-compute scores for all rows
+  const scoredMap = useMemo(() => {
+    const map = new Map<string, ScoredRow>();
+    for (const row of rows) {
+      map.set(row.ticker, scoreRow(row));
+    }
+    return map;
+  }, [rows]);
+
+  // Conviction tier summary
+  const tierCounts = useMemo(() => {
+    let high = 0, watchlist = 0, pass = 0;
+    for (const sr of scoredMap.values()) {
+      if (sr.tier === 'high') high++;
+      else if (sr.tier === 'watchlist') watchlist++;
+      else pass++;
+    }
+    return { high, watchlist, pass };
+  }, [scoredMap]);
+
   return (
     <>
       <div className="table-head">
         <span className="table-summary">
           {rows.length} {rows.length === 1 ? 'company' : 'companies'} · Updated {updatedLabel}
         </span>
+        <div className="conviction-summary">
+          <span className="tier-badge tier-high">{tierCounts.high} High Conviction</span>
+          <span className="tier-badge tier-watchlist">{tierCounts.watchlist} Watchlist</span>
+          <span className="tier-badge tier-pass">{tierCounts.pass} Pass</span>
+        </div>
         <div className="freshness-legend" aria-hidden="true">
           <FreshnessBadge freshness="fresh" /> just fetched
           <FreshnessBadge freshness="cached" /> from cache
@@ -178,13 +221,36 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
         <tbody>
           {rows.map((row) => {
             const freshness = rowFreshness(row, now);
+            const scored = scoredMap.get(row.ticker);
+            const tier = scored?.tier ?? 'pass';
+            const isExpanded = expanded.has(row.ticker);
             return (
-              <tr key={row.ticker}>
+              <>
+              <tr key={row.ticker} className={`row-${tier}`}>
                 {COLUMNS.map((col, idx) => {
                   if (col.identity) {
                     return (
                       <td key={`${row.ticker}-${idx}`} className="identity-cell">
                         <IdentityCell row={row} freshness={freshness} />
+                      </td>
+                    );
+                  }
+                  // Score column: clickable cell with color + toggle
+                  if (col.key === 'score' && scored) {
+                    return (
+                      <td
+                        key={`${row.ticker}-${idx}`}
+                        className={`num score-cell score-${tier}${scored.disqualified ? ' score-disqualified' : ''}`}
+                        title={`Click to ${isExpanded ? 'hide' : 'show'} breakdown`}
+                        onClick={() => toggleExpanded(row.ticker)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(row.ticker); } }}
+                      >
+                        <span className="score-value">{scored.score}</span>
+                        <span className="score-max">/17</span>
+                        {scored.disqualified && <span className="score-flag" title="Disqualified: critical Tier 1 failure">⚠</span>}
+                        <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
                     );
                   }
@@ -198,6 +264,34 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                   );
                 })}
               </tr>
+              {/* Expandable breakdown row */}
+              {isExpanded && scored && (
+                <tr key={`${row.ticker}-breakdown`} className="breakdown-row">
+                  <td colSpan={COLUMNS.length}>
+                    <div className="breakdown-grid">
+                      {CRITERION_KEYS.map((k) => {
+                        const raw = scored.breakdown[k];
+                        const w = CRITERION_WEIGHT[k];
+                        const weighted = raw * w;
+                        const cls = weighted > 0 ? 'bd-pos' : weighted < 0 ? 'bd-neg' : 'bd-zero';
+                        return (
+                          <div key={k} className={`breakdown-item ${cls}`}>
+                            <span className="bd-label">{CRITERION_LABELS[k]}</span>
+                            <span className="bd-weight">×{w}</span>
+                            <span className="bd-value">{weighted > 0 ? `+${weighted}` : weighted}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {scored.disqualified && (
+                      <div className="breakdown-warning">
+                        ⚠ Disqualified — critical failure in {scored.breakdown.earningsQuality === -1 ? 'Earnings Quality' : ''}{scored.breakdown.earningsQuality === -1 && scored.breakdown.leverage === -1 ? ' and ' : ''}{scored.breakdown.leverage === -1 ? 'Leverage' : ''}. Score cannot offset a Tier 1 elimination.
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )}
+              </>
             );
           })}
         </tbody>

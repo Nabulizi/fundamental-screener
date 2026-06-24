@@ -17,6 +17,10 @@ function makeRow(ticker: string): ScanRow {
     forwardPE: null,
     dividendYieldPercent: 0,
     ytdReturn: null,
+    fcfYieldPercent: null,
+    revenueGrowthTTM: null,
+    debtToEquity: null,
+    evToEbitda: null,
     retrievedAt: new Date().toISOString()
   };
 }
