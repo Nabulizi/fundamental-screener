@@ -224,6 +224,10 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
             const scored = scoredMap.get(row.ticker);
             const tier: SignalTier = scored?.tier ?? 'weak';
             const isExpanded = expanded.has(row.ticker);
+            // A benign Earnings-Quality −1 (growth drag) is waived, so it doesn't
+            // count toward the disqualification reasons shown below.
+            const eqDisqualifies = !!scored && scored.breakdown.earningsQuality === -1 && !scored.flags.benignEarningsQuality;
+            const levDisqualifies = !!scored && scored.breakdown.leverage === -1;
             return (
               <>
               <tr key={row.ticker} className={`row-${tier}`}>
@@ -297,10 +301,13 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       {scored.flags.crowding && (
                         <span className="bd-flag" title="Mega-cap trading near its 52-week high — already widely owned, capped at Moderate.">◆ Crowded (near 52W high)</span>
                       )}
+                      {scored.flags.benignEarningsQuality && (
+                        <span className="bd-flag" title="FCF trails earnings because revenue is surging (receivables build) and capex is heavy — a growth/capex drag, not a cash-conversion red flag. Scores −3 but does not disqualify.">↗ EQ −3 is a growth drag (not disqualifying)</span>
+                      )}
                     </div>
                     {scored.flags.disqualified && (
                       <div className="breakdown-warning">
-                        ⚠ Disqualified — critical failure in {scored.breakdown.earningsQuality === -1 ? 'Earnings Quality' : ''}{scored.breakdown.earningsQuality === -1 && scored.breakdown.leverage === -1 ? ' and ' : ''}{scored.breakdown.leverage === -1 ? 'Leverage' : ''}. A Tier 1 elimination forces a Weak signal regardless of strength.
+                        ⚠ Disqualified — critical failure in {eqDisqualifies ? 'Earnings Quality' : ''}{eqDisqualifies && levDisqualifies ? ' and ' : ''}{levDisqualifies ? 'Leverage' : ''}. A Tier 1 elimination forces a Weak signal regardless of strength.
                       </div>
                     )}
                   </td>

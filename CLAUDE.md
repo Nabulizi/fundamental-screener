@@ -99,7 +99,10 @@ optional.
 - **Scoring system:** `lib/scoring.ts` uses tier weights (×3 Survival, ×2
   Fundamental, ×1 Timing) split into Strength (positives) and Risk (negatives).
   Hard floors force a "Weak" tier: a −1 on Earnings Quality or Leverage (a Tier 1
-  elimination), or a Risk Score ≥ 8. Adjustments: P/E compression is neutralized
+  elimination), or a Risk Score ≥ 8. Exception: a −1 Earnings Quality is WAIVED
+  from the floor (still costs Risk) when it's a benign growth/capex drag — FCF
+  yield ≥ 2% and revenue growth > 20% (`isBenignEarningsQuality`); negative/weak
+  FCF never qualifies, preserving cash-burn protection. Adjustments: P/E compression is neutralized
   for cyclicals (semis/autos); D/E is neutralized for financials and for
   buyback-distorted equity (negative or D/E > 10, see `EXTREME_DE_RATIO`); a
   mega-cap ($200B+) near its 52-week high is capped at Moderate.
