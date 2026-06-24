@@ -7,7 +7,7 @@ import { formatCurrency, formatMarketCap, formatPe, formatPercent, formatReturn,
 import { rowFreshness, FRESHNESS_LABEL, type Freshness } from '@/lib/freshness';
 import { clampFraction, computeRangePosition } from '@/lib/range';
 import {
-  scoreRow,
+  scoreRow, criterionEvidence,
   type ScoredRow, type SignalTier,
   CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
 } from '@/lib/scoring';
@@ -278,9 +278,12 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                         const cls = weighted > 0 ? 'bd-pos' : weighted < 0 ? 'bd-neg' : 'bd-zero';
                         return (
                           <div key={k} className={`breakdown-item ${cls}`}>
-                            <span className="bd-label">{CRITERION_LABELS[k]}</span>
-                            <span className="bd-weight">×{w}</span>
-                            <span className="bd-value">{weighted > 0 ? `+${weighted}` : weighted}</span>
+                            <div className="bd-head">
+                              <span className="bd-label">{CRITERION_LABELS[k]}</span>
+                              <span className="bd-weight">×{w}</span>
+                              <span className="bd-value">{weighted > 0 ? `+${weighted}` : weighted}</span>
+                            </div>
+                            <div className="bd-evidence">{criterionEvidence(row, k)}</div>
                           </div>
                         );
                       })}

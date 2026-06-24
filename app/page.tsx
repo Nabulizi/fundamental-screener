@@ -11,7 +11,10 @@ const MAX_TICKERS = Number(process.env.NEXT_PUBLIC_MAX_TICKERS) || DEFAULT_MAX_T
 import { EMPTY_FILTERS } from '@/lib/filters';
 import { runClientScan, type ScanProgress } from '@/lib/clientScan';
 import { sortRows, type SortDir, type SortKey } from '@/lib/sort';
-import { scoreRow } from '@/lib/scoring';
+import {
+  scoreRow,
+  CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT, CRITERION_BENCHMARK,
+} from '@/lib/scoring';
 import { toCsv } from '@/lib/csv';
 import { serializeShare, parseShare } from '@/lib/shareUrl';
 import type { ScanError, ScanRow } from '@/lib/types';
@@ -392,6 +395,25 @@ export default function Page() {
               the setup?&quot; and &quot;how dangerous is it?&quot; are different questions. This is informational
               only, not a recommendation.
             </p>
+
+            <h4>Benchmark Reference</h4>
+            <p>What each criterion is measured against. The expandable per-row breakdown shows the
+            actual figures (e.g. <em>FCF 7.00% vs EY 5.00%</em>) — compare them to these thresholds.</p>
+            <table className="benchmark-table">
+              <thead>
+                <tr><th>Criterion</th><th className="bm-weight">Wt</th><th>Scores +1 when</th><th>Scores −1 when</th></tr>
+              </thead>
+              <tbody>
+                {CRITERION_KEYS.map((k) => (
+                  <tr key={k}>
+                    <td>{CRITERION_LABELS[k]}</td>
+                    <td className="bm-weight">×{CRITERION_WEIGHT[k]}</td>
+                    <td className="bm-pos">{CRITERION_BENCHMARK[k].positive}</td>
+                    <td className="bm-neg">{CRITERION_BENCHMARK[k].negative}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
             <h4>Weight Tiers</h4>
             <table className="weight-table">
