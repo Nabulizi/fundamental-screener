@@ -62,12 +62,18 @@ export type SignalTier = 'strong' | 'moderate' | 'weak';
 
 /** Overlay conditions that adjust the tier without being scored criteria. */
 export interface RowFlags {
-  /** Tier 1 elimination: Earnings Quality or Leverage scored −1. */
+  /** Tier 1 elimination: Earnings Quality or Leverage scored −1 (and not waived). */
   disqualified: boolean;
   /** Cyclical industry (semis, autos) — P/E compression was neutralized. */
   cyclical: boolean;
   /** Mega-cap trading near its 52-week high — already-discovered, caps at moderate. */
   crowding: boolean;
+  /**
+   * Earnings Quality scored −1 but it's a growth/capex drag (strong positive FCF
+   * + surging revenue), so it was waived from the hard-floor disqualifier. It
+   * still costs Risk points.
+   */
+  benignEarningsQuality: boolean;
 }
 
 export interface ScoredRow {
@@ -99,6 +105,16 @@ export const MEGA_CAP_THRESHOLD = 200_000_000_000;
  * the 2–10 band and still scores −1.
  */
 export const EXTREME_DE_RATIO = 10;
+
+/**
+ * A −1 Earnings Quality is treated as a benign growth/capex drag — not a cash-
+ * conversion red flag — when FCF is still at least neutral-grade AND revenue is
+ * surging. Fast growth mechanically inflates receivables and justifies heavy
+ * capex, so FCF legitimately trails (the larger) reported earnings. Such a −1
+ * still costs Risk points but is waived from the hard-floor disqualifier.
+ */
+export const BENIGN_EQ_MIN_FCF_YIELD = 2;    // FCF yield must be ≥ this (not weak/negative)
+export const BENIGN_EQ_MIN_REV_GROWTH = 20;  // revenue growth must exceed this (hyper-growth)
 
 /** Tier weight for each criterion, ordered by significance. */
 export const CRITERION_WEIGHT: Record<keyof ScoreBreakdown, number> = {
@@ -268,11 +284,27 @@ export function totalScore(breakdown: ScoreBreakdown): number {
 }
 
 /**
- * True when a Tier 1 criterion (Earnings Quality or Leverage) scores −1. This
- * is a hard disqualifier — the stock cannot be "strong" or "moderate".
+ * A −1 Earnings Quality is "benign" — a growth/capex drag rather than a cash-
+ * conversion red flag — when FCF is still solidly positive (≥ BENIGN_EQ_MIN_FCF_YIELD)
+ * AND revenue is surging (> BENIGN_EQ_MIN_REV_GROWTH). Negative/weak FCF can never
+ * qualify, so the cash-burn protection is preserved.
  */
-export function isDisqualified(breakdown: ScoreBreakdown): boolean {
-  return breakdown.earningsQuality === -1 || breakdown.leverage === -1;
+export function isBenignEarningsQuality(row: ScanRow): boolean {
+  const fcf = n(row.fcfYieldPercent);
+  const rev = n(row.revenueGrowthTTM);
+  return fcf != null && fcf >= BENIGN_EQ_MIN_FCF_YIELD
+      && rev != null && rev > BENIGN_EQ_MIN_REV_GROWTH;
+}
+
+/**
+ * True when a Tier 1 criterion (Earnings Quality or Leverage) scores −1 and is
+ * not waived. This is a hard disqualifier — the stock cannot be "strong" or
+ * "moderate". A −1 Earnings Quality is waived when it's a benign growth drag
+ * (see isBenignEarningsQuality); Leverage −1 is never waived here.
+ */
+export function isDisqualified(breakdown: ScoreBreakdown, row: ScanRow): boolean {
+  const eqDisqualifies = breakdown.earningsQuality === -1 && !isBenignEarningsQuality(row);
+  return eqDisqualifies || breakdown.leverage === -1;
 }
 
 /** Mega-cap trading in the top 10% of its 52-week range. */
@@ -298,9 +330,10 @@ export function scoreRow(row: ScanRow): ScoredRow {
   const breakdown = computeBreakdown(row);
   const { strength, risk } = computeScores(breakdown);
   const flags: RowFlags = {
-    disqualified: isDisqualified(breakdown),
+    disqualified: isDisqualified(breakdown, row),
     cyclical: isCyclicalIndustry(row.industry),
     crowding: isCrowded(row),
+    benignEarningsQuality: breakdown.earningsQuality === -1 && isBenignEarningsQuality(row),
   };
   return {
     row,

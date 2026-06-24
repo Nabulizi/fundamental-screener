@@ -429,13 +429,15 @@ export default function Page() {
             <p>A stock is forced to <strong>Weak</strong> regardless of its Strength Score when either:
             it scores −1 on Earnings Quality or Leverage (a Tier 1 elimination — fake earnings or fatal
             debt), or its <strong>Risk Score reaches 8+</strong> (too many red flags to offset). The Strength
-            Score ranks what&apos;s good; the floors eliminate what&apos;s dangerous.</p>
+            Score ranks what&apos;s good; the floors eliminate what&apos;s dangerous. (Exception: a <em>benign</em>
+            Earnings-Quality −1 — see Adjustments — is waived from the floor.)</p>
 
             <h4>Adjustments</h4>
             <ul className="tier-list">
               <li><strong>Cyclicals (semis, autos):</strong> P/E compression is neutralized — a low forward P/E off peak earnings is a trap, not durable growth.</li>
               <li><strong>Leverage:</strong> D/E is neutralized for financials (leverage is structural) and when the ratio is buyback-distorted — negative or extremely high (&gt;10) book equity makes it noise; EV/EBITDA carries the real read.</li>
               <li><strong>Crowding:</strong> a mega-cap ($200B+) trading near its 52-week high is capped at Moderate — already widely owned.</li>
+              <li><strong>Benign earnings quality:</strong> a −1 Earnings Quality (FCF below earnings yield) does <em>not</em> disqualify when FCF is still solidly positive (≥2%) and revenue is surging (&gt;20%) — that&apos;s a growth/capex drag (receivables build + heavy capex), not a cash-conversion red flag. It still costs Risk points.</li>
             </ul>
 
             <h4>Signal Tiers</h4>

@@ -9,6 +9,7 @@ import {
   breakdownTooltip,
   criterionEvidence,
   isDisqualified,
+  isBenignEarningsQuality,
   isCrowded,
   isCyclicalIndustry,
   isFinancialIndustry,
@@ -45,7 +46,7 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
   };
 }
 
-const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false };
+const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false };
 
 describe('computeBreakdown', () => {
   it('returns all zeros for a blank row', () => {
@@ -295,25 +296,58 @@ describe('computeScores (split strength / risk)', () => {
 
 describe('isDisqualified (hard floor rule)', () => {
   it('disqualified when Earnings Quality is −1', () => {
-    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 3 }));
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3 });
+    const b = computeBreakdown(row);
     expect(b.earningsQuality).toBe(-1);
-    expect(isDisqualified(b)).toBe(true);
+    expect(isDisqualified(b, row)).toBe(true);
   });
 
   it('disqualified when Leverage is −1', () => {
-    const b = computeBreakdown(blankRow({ debtToEquity: 3.0 }));
+    const row = blankRow({ debtToEquity: 3.0 });
+    const b = computeBreakdown(row);
     expect(b.leverage).toBe(-1);
-    expect(isDisqualified(b)).toBe(true);
+    expect(isDisqualified(b, row)).toBe(true);
   });
 
   it('not disqualified when a financial has high D/E (leverage neutralized)', () => {
-    const b = computeBreakdown(blankRow({ industry: 'Financial Services', debtToEquity: 3.0 }));
-    expect(isDisqualified(b)).toBe(false);
+    const row = blankRow({ industry: 'Financial Services', debtToEquity: 3.0 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(false);
   });
 
   it('not disqualified when both are +1', () => {
-    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 7, debtToEquity: 0.5 }));
-    expect(isDisqualified(b)).toBe(false);
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 7, debtToEquity: 0.5 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(false);
+  });
+});
+
+describe('benign Earnings Quality carve-out', () => {
+  it('is benign when FCF is positive (≥2%) and revenue is surging (>20%)', () => {
+    expect(isBenignEarningsQuality(blankRow({ fcfYieldPercent: 2.7, revenueGrowthTTM: 150 }))).toBe(true);
+  });
+
+  it('is NOT benign when FCF is weak (<2%) even with surging revenue', () => {
+    // e.g. MU on the stale 0.85% trailing FCF — caution still warranted
+    expect(isBenignEarningsQuality(blankRow({ fcfYieldPercent: 0.85, revenueGrowthTTM: 150 }))).toBe(false);
+  });
+
+  it('is NOT benign when growth is ordinary (≤20%)', () => {
+    expect(isBenignEarningsQuality(blankRow({ fcfYieldPercent: 4, revenueGrowthTTM: 12 }))).toBe(false);
+  });
+
+  it('waives the EQ disqualifier when benign, but keeps it otherwise', () => {
+    // EQ = −1 (FCF 3% vs EY 5%), but FCF≥2 and revenue +150% → benign → not disqualified
+    const benign = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 150 });
+    const bb = computeBreakdown(benign);
+    expect(bb.earningsQuality).toBe(-1);
+    expect(isDisqualified(bb, benign)).toBe(false);
+
+    // Same weak EQ but ordinary growth → still disqualified
+    const harsh = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 5 });
+    expect(isDisqualified(computeBreakdown(harsh), harsh)).toBe(true);
+  });
+
+  it('never benign when FCF is negative (cash burn protection intact)', () => {
+    expect(isBenignEarningsQuality(blankRow({ fcfYieldPercent: -2, revenueGrowthTTM: 150 }))).toBe(false);
   });
 });
 
@@ -444,6 +478,29 @@ describe('scoreRow', () => {
     const result = scoreRow(row);
     expect(result.breakdown.leverage).toBe(0);     // neutralized, not −1
     expect(result.flags.disqualified).toBe(false); // no longer a false Tier 1 elimination
+  });
+
+  it('does not disqualify MU on fresh data — EQ −1 is a benign growth drag → Moderate', () => {
+    // MU post-Q3 FY26: huge revenue growth, strong (if trailing-lagging) FCF,
+    // fortress balance sheet. EQ still −1 (FCF < earnings yield) but waived.
+    const row = blankRow({
+      industry: 'Semiconductors',
+      marketCap: 1_150_000_000_000,
+      trailingPE: 23,
+      forwardPE: 8,
+      fcfYieldPercent: 2.7,      // ≥2 → not weak
+      revenueGrowthTTM: 150,     // >20 → surging
+      debtToEquity: 0.057,
+      evToEbitda: 17,
+      rangePosition: 0.82,
+      ytdReturn: 268,
+      dividendYieldPercent: 0.06,
+    });
+    const result = scoreRow(row);
+    expect(result.breakdown.earningsQuality).toBe(-1);       // still scores −1 (costs Risk)
+    expect(result.flags.benignEarningsQuality).toBe(true);   // but waived
+    expect(result.flags.disqualified).toBe(false);
+    expect(result.tier).toBe('moderate');                    // no longer force-floored to weak
   });
 
   it('flags a cyclical near its highs and neutralizes its compression', () => {
