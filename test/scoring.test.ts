@@ -13,6 +13,7 @@ import {
   isCrowded,
   isCyclicalIndustry,
   isFinancialIndustry,
+  computeCoverage,
   CRITERION_WEIGHT,
   CRITERION_BENCHMARK,
   CRITERION_KEYS,
@@ -46,7 +47,16 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
   };
 }
 
-const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false };
+const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false };
+
+/** Fully-populated non-financial row (10/10 criteria have data). */
+function fullRow(overrides: Partial<ScanRow> = {}): ScanRow {
+  return blankRow({
+    trailingPE: 20, forwardPE: 15, fcfYieldPercent: 8, revenueGrowthTTM: 15,
+    debtToEquity: 0.5, evToEbitda: 10, dividendYieldPercent: 3,
+    rangePosition: 0.3, ytdReturn: 10, ...overrides,
+  });
+}
 
 describe('computeBreakdown', () => {
   it('returns all zeros for a blank row', () => {
@@ -69,6 +79,32 @@ describe('computeBreakdown', () => {
   it('−1 when FCF is negative (red flag)', () => {
     const b = computeBreakdown(blankRow({ fcfYieldPercent: -2 }));
     expect(b.earningsQuality).toBe(-1);
+  });
+
+  // The EQ test is a conversion RATIO (FCF/NI = fcfYield × PE / 100), so the
+  // threshold means the same thing at every valuation multiple. The old
+  // absolute-pp yield gap disqualified cheap stocks (1pp = 8% shortfall at P/E 8)
+  // while passing expensive ones (1pp = 50% shortfall at P/E 50).
+  it('passes sound deep value: FCF/NI 0.88 at P/E 8 is 0, not −1', () => {
+    const b = computeBreakdown(blankRow({ trailingPE: 8, fcfYieldPercent: 11 }));
+    expect(b.earningsQuality).toBe(0);
+  });
+
+  it('fails expensive low conversion: FCF/NI 0.55 at P/E 50 is −1', () => {
+    const b = computeBreakdown(blankRow({ trailingPE: 50, fcfYieldPercent: 1.1 }));
+    expect(b.earningsQuality).toBe(-1);
+  });
+
+  it('+1 whenever conversion exceeds 1.0, even by a small margin', () => {
+    // ratio = 5.2 × 20 / 100 = 1.04
+    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 5.2 }));
+    expect(b.earningsQuality).toBe(1);
+  });
+
+  it('0 in the 0.7–1.0 conversion band', () => {
+    // ratio = 4 × 20 / 100 = 0.8
+    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 4 }));
+    expect(b.earningsQuality).toBe(0);
   });
 
   // --- #2 Leverage (×3) ---
@@ -103,6 +139,35 @@ describe('computeBreakdown', () => {
     expect(b.leverage).toBe(0);
   });
 
+  // When D/E is distorted (negative or > EXTREME_DE_RATIO), interest coverage
+  // arbitrates: buyback-shrunken equity with easily-serviced debt stays neutral,
+  // but loss-wiped equity that can't cover interest is fatal — the exact case
+  // the blanket waiver used to hide.
+  it('−1 when D/E is extreme AND interest coverage is weak (loss-wiped equity)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 12, interestCoverage: 1.2 }));
+    expect(b.leverage).toBe(-1);
+  });
+
+  it('disqualifies extreme D/E with weak coverage (Tier 1 elimination)', () => {
+    const row = blankRow({ debtToEquity: 12, interestCoverage: 1.2 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  it('neutral when D/E is extreme but coverage is strong (MCD-style buybacks)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 40.64, interestCoverage: 8 }));
+    expect(b.leverage).toBe(0);
+  });
+
+  it('−1 when D/E is negative AND coverage is weak', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: -4.2, interestCoverage: 1.0 }));
+    expect(b.leverage).toBe(-1);
+  });
+
+  it('neutral when D/E is distorted and coverage is unavailable (cannot arbitrate)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 12, interestCoverage: null }));
+    expect(b.leverage).toBe(0);
+  });
+
   // --- #3 Revenue Growth (×2) ---
   it('+1 when revenue growth > 10%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: 15 }));
@@ -117,6 +182,39 @@ describe('computeBreakdown', () => {
   it('0 when revenue growth between 0 and 10%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: 7 }));
     expect(b.revenueGrowth).toBe(0);
+  });
+
+  // Provider growth figures are not always trustworthy — verified live: Finnhub
+  // returns revenueGrowthTTMYoy 108.98 for JPM, a clear artifact. Implausible
+  // values are neutralized and flagged instead of scored.
+  it('neutralizes implausible growth for a financial (>60%) — live JPM artifact', () => {
+    const row = blankRow({ industry: 'Banks', revenueGrowthTTM: 108.98 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(0);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(true);
+  });
+
+  it('keeps plausible financial growth scored', () => {
+    const row = blankRow({ industry: 'Banks', revenueGrowthTTM: 12 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(1);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(false);
+  });
+
+  it('neutralizes >300% growth for any industry (data artifact scale)', () => {
+    const row = blankRow({ revenueGrowthTTM: 350 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(0);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(true);
+  });
+
+  it('keeps genuine hyper-growth scored for non-financials (MU-style 150%)', () => {
+    const row = blankRow({ industry: 'Semiconductors', revenueGrowthTTM: 150 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(1);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(false);
+  });
+
+  it('suspect growth never grants the benign-EQ waiver', () => {
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 350 });
+    expect(isBenignEarningsQuality(row)).toBe(false);
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
   });
 
   // --- #4 FCF Yield Level (×2) ---
@@ -220,6 +318,61 @@ describe('computeBreakdown', () => {
   it('0 for non-payer', () => {
     const b = computeBreakdown(blankRow({ dividendYieldPercent: 0 }));
     expect(b.dividendYield).toBe(0);
+  });
+});
+
+describe('financial neutralization (FCF-derived criteria are noise for banks/insurers)', () => {
+  // P/FCF-derived FCF yield is economically meaningless for financials —
+  // verified live: Finnhub returns JPM pfcfShareTTM 5.98 (a 16.7% "FCF yield").
+  // Only D/E used to be neutralized; the FCF criteria scored the noise.
+  const bank = () => blankRow({
+    industry: 'Banks', trailingPE: 11, fcfYieldPercent: 30,
+    dividendYieldPercent: 3, evToEbitda: 9,
+  });
+
+  it('neutralizes earnings quality for financials', () => {
+    expect(computeBreakdown(bank()).earningsQuality).toBe(0);
+  });
+
+  it('neutralizes FCF yield level for financials', () => {
+    expect(computeBreakdown(bank()).fcfYieldLevel).toBe(0);
+  });
+
+  it('neutralizes dividend coverage for financials', () => {
+    expect(computeBreakdown(bank()).dividendCoverage).toBe(0);
+  });
+
+  it('neutralizes EV/EBITDA valuation for financials (not meaningful for banks)', () => {
+    expect(computeBreakdown(bank()).valuation).toBe(0);
+  });
+
+  it('does not treat negative FCF as a red flag for a financial (still noise)', () => {
+    expect(computeBreakdown(blankRow({ industry: 'Insurance', fcfYieldPercent: -5 })).earningsQuality).toBe(0);
+  });
+
+  it('still scores P/E-based and price criteria for financials', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Banks', trailingPE: 11, forwardPE: 10, dividendYieldPercent: 3, ytdReturn: 6 }));
+    expect(b.peCompression).toBe(1);
+    expect(b.dividendYield).toBe(1);
+    expect(b.ytdMomentum).toBe(1);
+  });
+});
+
+describe('REIT leverage neutralization', () => {
+  it('does not flag structurally normal REIT leverage (D/E 2.5)', () => {
+    const row = blankRow({ industry: 'Real Estate Investment Trusts', debtToEquity: 2.5 });
+    const b = computeBreakdown(row);
+    expect(b.leverage).toBe(0);
+    expect(isDisqualified(b, row)).toBe(false);
+  });
+
+  it('matches bare "REIT" industry labels', () => {
+    expect(computeBreakdown(blankRow({ industry: 'Equity REITs', debtToEquity: 2.5 })).leverage).toBe(0);
+  });
+
+  it('keeps FCF-derived criteria scored for REITs (unlike financials)', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Real Estate Investment Trusts', fcfYieldPercent: 6 }));
+    expect(b.fcfYieldLevel).toBe(1);
   });
 });
 
@@ -365,7 +518,78 @@ describe('isCrowded (mega-cap near 52W high)', () => {
   });
 });
 
+describe('computeCoverage + minimum-data floor', () => {
+  // A null input can never score −1, so sparse rows used to look SAFER than
+  // covered ones (an Alpha Vantage failover row cannot be disqualified at all).
+  // Coverage measures how much of the scorecard actually had data; below the
+  // floor a row cannot tier above weak, and the flag says why.
+  it('counts 10/10 for a fully-populated non-financial row', () => {
+    const c = computeCoverage(fullRow());
+    expect(c.covered).toBe(10);
+    expect(c.applicable).toBe(10);
+    expect(c.fraction).toBe(1);
+  });
+
+  it('excludes deliberately-neutralized criteria from the denominator (cyclical)', () => {
+    const c = computeCoverage(fullRow({ industry: 'Semiconductors' }));
+    expect(c.applicable).toBe(9); // peCompression not applicable
+    expect(c.covered).toBe(9);
+  });
+
+  it('excludes the five neutralized criteria for financials', () => {
+    // EQ, leverage, FCF level, dividend coverage, valuation are all neutralized.
+    const c = computeCoverage(fullRow({ industry: 'Banks' }));
+    expect(c.applicable).toBe(5);
+    expect(c.covered).toBe(5);
+  });
+
+  it('counts suspect revenue growth as uncovered, not covered', () => {
+    const c = computeCoverage(fullRow({ revenueGrowthTTM: 350 }));
+    expect(c.covered).toBe(9);
+  });
+
+  it('flags an AV-failover-shaped row as insufficient and floors it to weak', () => {
+    // Alpha Vantage supplies no fcf/rev/de/ev/ytd — 3/10 coverage.
+    const row = blankRow({ trailingPE: 14, forwardPE: 12, dividendYieldPercent: 2.5, rangePosition: 0.5 });
+    const scored = scoreRow(row);
+    expect(scored.coverage.fraction).toBeLessThan(0.7);
+    expect(scored.flags.insufficientData).toBe(true);
+    expect(scored.tier).toBe('weak');
+  });
+
+  it('missing D/E alone makes a non-financial insufficient (leverage unverifiable)', () => {
+    const scored = scoreRow(fullRow({ debtToEquity: null }));
+    expect(scored.coverage.fraction).toBeGreaterThanOrEqual(0.7);
+    expect(scored.flags.insufficientData).toBe(true);
+    expect(scored.tier).toBe('weak');
+  });
+
+  it('missing FCF alone makes a non-financial insufficient (cash conversion unverifiable)', () => {
+    const scored = scoreRow(fullRow({ fcfYieldPercent: null }));
+    expect(scored.flags.insufficientData).toBe(true);
+  });
+
+  it('does not require D/E or FCF for financials (not applicable to them)', () => {
+    const row = blankRow({
+      industry: 'Banks', trailingPE: 11, forwardPE: 10, revenueGrowthTTM: 12,
+      dividendYieldPercent: 3, rangePosition: 0.5, ytdReturn: 6,
+    });
+    const scored = scoreRow(row);
+    expect(scored.flags.insufficientData).toBe(false);
+  });
+
+  it('a fully-covered strong row keeps its tier', () => {
+    const scored = scoreRow(fullRow({ marketCap: 5_000_000_000 }));
+    expect(scored.flags.insufficientData).toBe(false);
+    expect(scored.tier).toBe('strong');
+  });
+});
+
 describe('tierFor (neutral signal tiers)', () => {
+  it('weak when data coverage is insufficient, regardless of strength', () => {
+    expect(tierFor(15, 0, { ...NO_FLAGS, insufficientData: true })).toBe('weak');
+  });
+
   it('strong for strength >= 12 with low risk and no flags', () => {
     expect(tierFor(12, 0, NO_FLAGS)).toBe('strong');
     expect(tierFor(17, 2, NO_FLAGS)).toBe('strong');
@@ -521,9 +745,9 @@ describe('scoreRow', () => {
 });
 
 describe('criterionEvidence', () => {
-  it('shows FCF vs Earnings Yield for earnings quality', () => {
+  it('shows the FCF/NI conversion ratio for earnings quality', () => {
     expect(criterionEvidence(blankRow({ trailingPE: 20, fcfYieldPercent: 7 }), 'earningsQuality'))
-      .toBe('FCF 7.00% vs EY 5.00%');
+      .toBe('FCF/NI 1.40 (FCF 7.00% vs EY 5.00%)');
   });
 
   it('shows the D/E ratio for leverage', () => {

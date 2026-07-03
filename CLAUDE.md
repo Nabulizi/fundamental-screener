@@ -99,14 +99,32 @@ optional.
 - **Scoring system:** `lib/scoring.ts` uses tier weights (×3 Survival, ×2
   Fundamental, ×1 Timing) split into Strength (positives) and Risk (negatives).
   Hard floors force a "Weak" tier: a −1 on Earnings Quality or Leverage (a Tier 1
-  elimination), or a Risk Score ≥ 8. Exception: a −1 Earnings Quality is WAIVED
-  from the floor (still costs Risk) when it's a benign growth/capex drag — FCF
-  yield ≥ 2% and revenue growth > 20% (`isBenignEarningsQuality`); negative/weak
-  FCF never qualifies, preserving cash-burn protection. Adjustments: P/E compression is neutralized
-  for cyclicals (semis/autos); D/E is neutralized for financials and for
-  buyback-distorted equity (negative or D/E > 10, see `EXTREME_DE_RATIO`); a
-  mega-cap ($200B+) near its 52-week high is capped at Moderate.
-  Tiers by Strength: 12+ Strong, 7–11 Moderate, <7 Weak. The breakdown +
-  Strength/Risk/flags are visible per-row via an expandable detail row.
+  elimination), a Risk Score ≥ 8, or insufficient data coverage (below).
+  Earnings Quality is the FCF/NI **conversion ratio** (`fcfYield × PE / 100`;
+  +1 > 1.0, −1 < 0.7 — valuation-neutral by construction; do NOT revert to an
+  absolute yield-gap, which is biased against low multiples). Exception: a −1
+  Earnings Quality is WAIVED from the floor (still costs Risk) when it's a
+  benign growth/capex drag — FCF yield ≥ 2% and revenue growth > 20%
+  (`isBenignEarningsQuality`); negative/weak FCF never qualifies, preserving
+  cash-burn protection. Adjustments: P/E compression is neutralized for
+  cyclicals (semis/autos); for **financials** ALL FCF-derived criteria
+  (Earnings Quality, FCF Level, Dividend Coverage) plus EV/EBITDA and D/E are
+  neutralized (P/FCF and EBITDA are noise for banks/insurers — verified live);
+  **REITs** get D/E neutralized (structural leverage) but keep FCF criteria;
+  a distorted D/E (negative or > `EXTREME_DE_RATIO` 10) is arbitrated by
+  interest coverage (`netInterestCoverageTTM` → `ScanRow.interestCoverage`):
+  coverage < `WEAK_INTEREST_COVERAGE` (2) → −1 (fatal, disqualifies), else
+  neutral — buyback distortion (MCD) stays waived, loss-wiped equity doesn't;
+  a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  **Data guards:** implausible revenue growth is neutralized + flagged, never
+  scored (`sanitizeRevenueGrowth`: financials > 60%, anyone > 300% — Finnhub
+  returned 108.98% for JPM live) and never grants the benign-EQ waiver;
+  `computeCoverage` counts applicable criteria with data (deliberately-
+  neutralized ones excluded from the denominator) and `hasInsufficientData`
+  (coverage < 0.7, or missing FCF/D/E where applicable) floors the tier to
+  Weak — a null input can never score −1, so sparse rows must not look safer
+  than covered ones. Tiers by Strength: 12+ Strong, 7–11 Moderate, <7 Weak.
+  The breakdown + Strength/Risk/coverage/flags are visible per-row via an
+  expandable detail row.
 - `SortKey` includes `'score'` which is not a `ScanRow` field — `sortRows`
   accepts an optional `scoreMap` parameter for this virtual column.

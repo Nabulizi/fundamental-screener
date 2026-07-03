@@ -27,6 +27,12 @@ export interface ScanRow {
   debtToEquity: number | null;
   /** Enterprise value / EBITDA (TTM). Non-positive / unavailable is null. */
   evToEbitda: number | null;
+  /**
+   * Net interest coverage (TTM). Not displayed as a column; used by scoring to
+   * arbitrate distorted D/E ratios (negative or extreme book equity). Optional —
+   * null/absent means the provider did not supply it.
+   */
+  interestCoverage?: number | null;
   /** Current price in `currency`. Optional — populated only when the provider quote is available. */
   currentPrice?: number | null;
   /** Position within the 52-week range, 0..1 (low..high). Null when inputs are missing/invalid. */

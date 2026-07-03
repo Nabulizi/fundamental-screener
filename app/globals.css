@@ -722,6 +722,7 @@ tbody tr:hover {
 }
 .bd-strength { color: #4ade80; font-weight: 600; }
 .bd-risk { color: #f87171; font-weight: 600; }
+.bd-coverage { color: var(--muted); font-weight: 600; cursor: help; }
 .bd-flag { color: var(--muted); cursor: help; }
 
 /* Expandable breakdown row */

@@ -50,6 +50,21 @@ describe('normalizeFinnhub', () => {
     expect(row.forwardPE).toBeNull();
   });
 
+  it('passes negative D/E through (negative book equity — scorer arbitrates)', () => {
+    const row = normalizeFinnhub('MCD', { name: "McDonald's", currency: 'USD' }, { 'totalDebt/totalEquityQuarterly': -4.2 }, AT);
+    expect(row.debtToEquity).toBe(-4.2);
+  });
+
+  it('maps net interest coverage TTM', () => {
+    const row = normalizeFinnhub('AAPL', { name: 'Apple', currency: 'USD' }, { netInterestCoverageTTM: 28.4 }, AT);
+    expect(row.interestCoverage).toBe(28.4);
+  });
+
+  it('returns null interest coverage when the field is missing', () => {
+    const row = normalizeFinnhub('NEW', { name: 'Newly Listed', currency: 'USD' }, {}, AT);
+    expect(row.interestCoverage).toBeNull();
+  });
+
   it('extracts YTD return when available', () => {
     const row = normalizeFinnhub('AAPL', { name: 'Apple', currency: 'USD' }, { yearToDatePriceReturnDaily: 9.25 }, AT);
     expect(row.ytdReturn).toBe(9.25);

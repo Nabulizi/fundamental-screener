@@ -245,7 +245,7 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       <td
                         key={`${row.ticker}-${idx}`}
                         className={`num score-cell score-${tier}${scored.flags.disqualified ? ' score-disqualified' : ''}`}
-                        title={`Strength ${scored.strengthScore}/17 · Risk ${scored.riskScore}/16 — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
+                        title={`Strength ${scored.strengthScore}/17 · Risk ${scored.riskScore}/16 · Data ${scored.coverage.covered}/${scored.coverage.applicable} — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
                         onClick={() => toggleExpanded(row.ticker)}
                         role="button"
                         tabIndex={0}
@@ -255,6 +255,9 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                         <span className="score-max">/17</span>
                         {(scored.flags.disqualified || scored.riskScore >= 8) && (
                           <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/16)`}>⚠</span>
+                        )}
+                        {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < 8 && (
+                          <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
                         )}
                         <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
@@ -295,6 +298,13 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                     <div className="breakdown-meta">
                       <span className="bd-strength">Strength {scored.strengthScore}/17</span>
                       <span className="bd-risk">Risk {scored.riskScore}/16</span>
+                      <span className="bd-coverage" title="Applicable criteria with data behind them. Deliberately-neutralized criteria (e.g. FCF reads for financials) are excluded.">Data {scored.coverage.covered}/{scored.coverage.applicable}</span>
+                      {scored.flags.suspectRevenueGrowth && (
+                        <span className="bd-flag" title="The provider's revenue-growth figure is implausible (beyond sanity bounds) — neutralized rather than scored. Verify at the source.">⚑ Revenue growth looks implausible (neutralized)</span>
+                      )}
+                      {scored.flags.insufficientData && (
+                        <span className="bd-flag" title="Too few criteria have data to trust a tier — missing values can never flag risk, so sparse rows would otherwise look artificially safe.">◌ Insufficient data (tier capped at Weak)</span>
+                      )}
                       {scored.flags.cyclical && (
                         <span className="bd-flag" title="Cyclical industry — a low forward P/E here often reflects peak earnings, so P/E compression is neutralized.">↻ Cyclical (compression neutralized)</span>
                       )}
