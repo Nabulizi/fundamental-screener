@@ -109,7 +109,17 @@ conversions are isolated in `normalizeFinnhub()` (`lib/finnhub.ts`).
 | `week52High`           | `/stock/metric`     | `metric.52WeekHigh`            |                                          |
 | `week52Low`            | `/stock/metric`     | `metric.52WeekLow`            |                                          |
 | `trailingPE`           | `/stock/metric`     | `metric.peTTM`                 | Non-positive → `null` (no meaningful PE).|
+| `forwardPE`            | `/stock/metric`     | `metric.forwardPE`             | Non-positive → `null`.                   |
 | `dividendYieldPercent` | `/stock/metric`     | `metric.dividendYieldIndicatedAnnual` | **Already a percentage** (3.05 = 3.05%). |
+| `ytdReturn`            | `/stock/metric`     | `metric.yearToDatePriceReturnDaily` | Percentage.                         |
+| `fcfYieldPercent`      | `/stock/metric`     | `metric.pfcfShareTTM`          | Derived: `100 / P/FCF`; non-positive P/FCF → `null`. |
+| `revenueGrowthTTM`     | `/stock/metric`     | `metric.revenueGrowthTTMYoy`   | Percentage. Implausible values are neutralized by scoring. |
+| `revenueGrowthQuarterly` | `/stock/metric`   | `metric.revenueGrowthQuarterlyYoy` | Percentage; acceleration criterion input. |
+| `debtToEquity`         | `/stock/metric`     | `metric.totalDebt/totalEquityQuarterly` | **Ratio** (not percent). Negative (negative book equity) passes through; scoring arbitrates. |
+| `interestCoverage`     | `/stock/metric`     | `metric.netInterestCoverageTTM` | Ratio; arbitrates distorted D/E in scoring. |
+| `evToEbitda`           | `/stock/metric`     | `metric.evEbitdaTTM`           | Non-positive → `null`.                   |
+| `operatingMarginTTM`   | `/stock/metric`     | `metric.operatingMarginTTM`    | Percentage; margin-inflection input.     |
+| `operatingMargin5Y`    | `/stock/metric`     | `metric.operatingMargin5Y`     | Percentage; margin-inflection baseline.  |
 | `currentPrice`         | `/quote`            | `c`                            | Trading currency; non-positive → `null`. Best-effort. |
 
 `rangePosition` is derived: `(currentPrice − 52WeekLow) / (52WeekHigh − 52WeekLow)`,

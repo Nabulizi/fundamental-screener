@@ -87,8 +87,9 @@ export interface RowFlags {
    */
   benignEarningsQuality: boolean;
   /**
-   * The provider's revenue-growth figure was implausible (beyond the sanity
-   * bounds) — neutralized rather than scored. Verify at the source.
+   * A provider revenue-growth figure (TTM or quarterly) was implausible
+   * (beyond the sanity bounds) — neutralized rather than scored. Verify at
+   * the source.
    */
   suspectRevenueGrowth: boolean;
   /**
@@ -470,8 +471,13 @@ export const MIN_CRITERION_COVERAGE = 0.7;
 export const TRAP_CHEAP_EV_EBITDA = 8;  // EV/EBITDA below this is "deep cheap"
 export const TRAP_CHEAP_FCF_YIELD = 8;  // FCF yield above this (%) is "deep cheap"
 
-/** Deep optical cheapness on trailing numbers (either lens qualifies). */
+/**
+ * Deep optical cheapness on trailing numbers (either lens qualifies). Never
+ * true for financials: both lenses (FCF yield, EV/EBITDA) are the same data
+ * the scorer neutralizes for them — noise cannot make a bank "cheap".
+ */
 export function isOpticallyCheap(row: ScanRow): boolean {
+  if (isFinancialIndustry(row.industry)) return false;
   const ev = row.evToEbitda != null && Number.isFinite(row.evToEbitda) ? row.evToEbitda : null;
   const fcf = row.fcfYieldPercent != null && Number.isFinite(row.fcfYieldPercent) ? row.fcfYieldPercent : null;
   return (ev != null && ev < TRAP_CHEAP_EV_EBITDA) || (fcf != null && fcf > TRAP_CHEAP_FCF_YIELD);
@@ -507,6 +513,12 @@ export function isPeakCycle(row: ScanRow): boolean {
  * knowingly ignores them, so they aren't a data-quality gap. A suspect
  * (implausible) revenue-growth figure counts as UNcovered: bad data is no
  * better than missing data.
+ *
+ * Known limitation: a provider gap and a structurally-inapplicable metric are
+ * indistinguishable here (providers normalize a loss-maker's P/E to null the
+ * same way as a missing one), so unprofitable companies max out below full
+ * coverage and sparse young names tend toward the insufficient-data floor.
+ * That errs conservative, which is the intended direction.
  */
 export function computeCoverage(row: ScanRow): CriterionCoverage {
   const pe = n(row.trailingPE);
@@ -551,8 +563,7 @@ export function computeCoverage(row: ScanRow): CriterionCoverage {
  * or a risk-critical input (FCF for cash conversion, D/E for leverage) missing
  * where those criteria apply.
  */
-export function hasInsufficientData(row: ScanRow): boolean {
-  const coverage = computeCoverage(row);
+export function hasInsufficientData(row: ScanRow, coverage: CriterionCoverage = computeCoverage(row)): boolean {
   if (coverage.fraction < MIN_CRITERION_COVERAGE) return true;
   const financial = isFinancialIndustry(row.industry);
   if (!financial && n(row.fcfYieldPercent) == null) return true;
@@ -614,8 +625,8 @@ export function scoreRow(row: ScanRow): ScoredRow {
     cyclical: isCyclicalIndustry(row.industry),
     crowding: isCrowded(row),
     benignEarningsQuality: breakdown.earningsQuality === -1 && isBenignEarningsQuality(row),
-    suspectRevenueGrowth: sanitizeRevenueGrowth(row).suspect,
-    insufficientData: hasInsufficientData(row),
+    suspectRevenueGrowth: sanitizeRevenueGrowth(row).suspect || sanitizeQuarterlyRevGrowth(row).suspect,
+    insufficientData: hasInsufficientData(row, coverage),
     valueTrap: isValueTrap(row),
     peakCycle: isPeakCycle(row),
   };
@@ -693,10 +704,15 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
         : `${formatReturn(rev)} YoY`;
     }
     case 'revenueAcceleration': {
-      const q = sanitizeQuarterlyRevGrowth(row).value;
-      const t = sanitizeRevenueGrowth(row).value;
-      if (q == null || t == null) return 'no data';
-      return `Q ${formatReturn(q)} vs TTM ${formatReturn(t)} YoY`;
+      const qs = sanitizeQuarterlyRevGrowth(row);
+      const ts = sanitizeRevenueGrowth(row);
+      if (qs.suspect || ts.suspect) {
+        const rawQ = n(row.revenueGrowthQuarterly);
+        const rawT = n(row.revenueGrowthTTM);
+        return `Q ${rawQ != null ? formatReturn(rawQ) : 'n/a'} vs TTM ${rawT != null ? formatReturn(rawT) : 'n/a'} · implausible — neutralized (verify at source)`;
+      }
+      if (qs.value == null || ts.value == null) return 'no data';
+      return `Q ${formatReturn(qs.value)} vs TTM ${formatReturn(ts.value)} YoY`;
     }
     case 'fcfYieldLevel':
       if (isFinancialIndustry(row.industry)) return 'financial — FCF-based read neutralized';

@@ -10,7 +10,7 @@ import {
   scoreRow, criterionEvidence,
   type ScoredRow, type SignalTier,
   CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
-  MAX_STRENGTH, MAX_RISK,
+  MAX_STRENGTH, MAX_RISK, RISK_FLOOR,
 } from '@/lib/scoring';
 
 const FRESHNESS_TITLE: Record<Freshness, string> = {
@@ -254,10 +254,10 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       >
                         <span className="score-value">{scored.strengthScore}</span>
                         <span className="score-max">/{MAX_STRENGTH}</span>
-                        {(scored.flags.disqualified || scored.riskScore >= 8) && (
+                        {(scored.flags.disqualified || scored.riskScore >= RISK_FLOOR) && (
                           <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/${MAX_RISK})`}>⚠</span>
                         )}
-                        {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < 8 && (
+                        {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < RISK_FLOOR && (
                           <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
                         )}
                         {(scored.flags.valueTrap || scored.flags.peakCycle) && (

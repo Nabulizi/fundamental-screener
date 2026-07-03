@@ -61,7 +61,17 @@ async function probe(ticker, key) {
   show('52WeekHigh', metric['52WeekHigh']);
   show('52WeekLow', metric['52WeekLow']);
   show('peTTM', metric['peTTM']);
+  show('forwardPE', metric['forwardPE']);
   show('dividendYieldIndicatedAnnual', `${metric['dividendYieldIndicatedAnnual']}  (KO ~3 => percent; ~0.03 => decimal)`);
+  show('pfcfShareTTM', `${metric['pfcfShareTTM']}  (Price/FCF ratio; app derives FCF yield = 100/this)`);
+  show('revenueGrowthTTMYoy', `${metric['revenueGrowthTTMYoy']}  (percent, e.g. 12.76 = +12.76%; financials can be artifacts)`);
+  show('revenueGrowthQuarterlyYoy', `${metric['revenueGrowthQuarterlyYoy']}  (percent; compared vs TTM by the acceleration criterion)`);
+  show('totalDebt/totalEquityQuarterly', `${metric['totalDebt/totalEquityQuarterly']}  (RATIO, e.g. AAPL <2; negative = negative book equity)`);
+  show('netInterestCoverageTTM', `${metric['netInterestCoverageTTM']}  (ratio; arbitrates distorted D/E — <2 is fatal)`);
+  show('evEbitdaTTM', metric['evEbitdaTTM']);
+  show('operatingMarginTTM', `${metric['operatingMarginTTM']}  (percent, e.g. AAPL ~30)`);
+  show('operatingMargin5Y', `${metric['operatingMargin5Y']}  (percent; margin-inflection baseline)`);
+  show('yearToDatePriceReturnDaily', `${metric['yearToDatePriceReturnDaily']}  (percent)`);
   show('quote.c (current price)', `${quote.c}  (expect a positive number between 52WeekLow and 52WeekHigh, in trading currency)`);
 }
 
@@ -89,7 +99,9 @@ async function probeAlphaVantage(ticker, key) {
 
 async function main() {
   await loadEnvLocal();
-  const key = process.env.FINNHUB_API_KEY;
+  // FINNHUB_API_KEY supports comma-separated multiple keys (round-robin in the
+  // app); the probe just needs one valid key.
+  const key = (process.env.FINNHUB_API_KEY ?? '').split(',')[0].trim();
   if (!key) {
     console.error('FINNHUB_API_KEY is not set. Add it to .env.local (see .env.example) and retry.');
     process.exit(1);

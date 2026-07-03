@@ -119,6 +119,13 @@ optional.
   coverage < `WEAK_INTEREST_COVERAGE` (2) → −1 (fatal, disqualifies), else
   neutral — buyback distortion (MCD) stays waived, loss-wiped equity doesn't;
   a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  **Known consequences (intentional, reviewed):** financials' maximum
+  achievable Strength is 11 (five criteria neutralized) so they can never
+  tier Strong — a deliberate limited-scorecard stance until a
+  financial-specific template exists; and coverage cannot distinguish
+  "provider gap" from "structurally inapplicable" (loss-makers have P/E
+  normalized to null), so sparse unprofitable names tend toward the
+  insufficient-data floor — conservative by design.
   **Trap gates** (both cap the tier at Moderate + flag, because a falling
   price/peaking earnings improves four criteria at once while decline shows in
   at most one −2 signal): `isValueTrap` — optically cheap (EV/EBITDA < 8 or

@@ -212,6 +212,12 @@ describe('computeBreakdown', () => {
     expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(false);
   });
 
+  it('flags a suspect QUARTERLY figure too (not silently swallowed)', () => {
+    const row = blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 350 });
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(true);
+    expect(criterionEvidence(row, 'revenueAcceleration')).toContain('implausible');
+  });
+
   it('suspect growth never grants the benign-EQ waiver', () => {
     const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 350 });
     expect(isBenignEarningsQuality(row)).toBe(false);
@@ -628,6 +634,13 @@ describe('value-trap gate (cheap + shrinking cannot rank Strong)', () => {
 
   it('does not flag a declining business that is not optically cheap', () => {
     const scored = scoreRow(blankRow({ revenueGrowthTTM: -5, evToEbitda: 12, fcfYieldPercent: 4 }));
+    expect(scored.flags.valueTrap).toBe(false);
+  });
+
+  it('never flags financials — their FCF/EV "cheapness" is the same neutralized noise', () => {
+    // A bank with P/FCF-noise FCF yield (the live JPM case) and mildly declining
+    // revenue must not be labeled a value trap off data the scorer refuses to score.
+    const scored = scoreRow(blankRow({ industry: 'Banks', fcfYieldPercent: 30, evToEbitda: 5, revenueGrowthTTM: -2 }));
     expect(scored.flags.valueTrap).toBe(false);
   });
 });
