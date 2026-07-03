@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ScanRow } from '@/lib/types';
@@ -69,5 +69,43 @@ describe('recordSnapshots — core', () => {
   it('never records cached rows', async () => {
     const written = await recordSnapshots([freshRow('AAPL', { cached: true })], { filePath: file(), now: day1, cache: new Map() });
     expect(written).toBe(0);
+  });
+});
+
+describe('recordSnapshots — resilience', () => {
+  it('rebuilds the seen-set from the file after a restart (fresh cache)', async () => {
+    await recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache: new Map() });
+    // New cache = simulated server restart; dedup must come from the file.
+    const after = await recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache: new Map() });
+    expect(after).toBe(0);
+    expect(await lines()).toHaveLength(1);
+  });
+
+  it('tolerates corrupt lines in an existing file', async () => {
+    const good = JSON.stringify({ v: 1, date: '2026-07-03', ticker: 'AAPL', scoringVersion: 3, row: {}, score: {} });
+    await writeFile(file(), `not json at all\n${good}\n`, 'utf8');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const written = await recordSnapshots([freshRow('AAPL'), freshRow('MSFT')], { filePath: file(), now: day1, cache: new Map() });
+    expect(written).toBe(1); // AAPL deduped from the good line; MSFT written
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('corrupt'));
+    warn.mockRestore();
+  });
+
+  it('is a no-op when SNAPSHOTS_DISABLED=1', async () => {
+    vi.stubEnv('SNAPSHOTS_DISABLED', '1');
+    const written = await recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache: new Map() });
+    vi.unstubAllEnvs();
+    expect(written).toBe(0);
+  });
+
+  it('warns and returns 0 on append failure — never throws', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const written = await recordSnapshots([freshRow('AAPL')], {
+      filePath: file(), now: day1, cache: new Map(),
+      appendFileImpl: async () => { throw new Error('disk full'); },
+    });
+    expect(written).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+    warn.mockRestore();
   });
 });
