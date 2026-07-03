@@ -5,6 +5,10 @@ import { scoreRow, SCORING_VERSION, type ScoredRow } from './scoring';
 
 // Append-only JSONL scan history. One line per ticker per local calendar day
 // (first fresh result wins). See docs/specs/2026-07-03-scan-snapshots-design.md.
+// Concurrent calls against the SAME file path are serialized through a per-file
+// in-flight promise chain (fileLocks) so that cold-cache rebuilds and dedup
+// checks never race. Distinct file paths are independent and do not block each
+// other.
 
 /** Bump if the LINE FORMAT below ever changes (scoring changes bump SCORING_VERSION instead). */
 export const SNAPSHOT_SCHEMA_VERSION = 1;
@@ -27,6 +31,9 @@ export interface SnapshotOptions {
 
 const DEFAULT_FILE = path.join(process.cwd(), 'data', 'snapshots.jsonl');
 const defaultCache: SnapshotCache = new Map();
+
+/** Per-file mutex: serializes concurrent recordSnapshots calls to the same path. */
+const fileLocks = new Map<string, Promise<unknown>>();
 
 function localDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -75,15 +82,9 @@ async function seenTickers(filePath: string, date: string, opts: SnapshotOptions
   return tickers;
 }
 
-/**
- * Append the first fresh (non-cached) result of the day for each ticker.
- * Returns how many lines were written. NEVER throws — a snapshot failure must
- * never fail a scan. Disable entirely with SNAPSHOTS_DISABLED=1.
- */
-export async function recordSnapshots(rows: ScanRow[], opts: SnapshotOptions = {}): Promise<number> {
+async function doRecord(rows: ScanRow[], opts: SnapshotOptions, filePath: string): Promise<number> {
   try {
     if (process.env.SNAPSHOTS_DISABLED === '1') return 0;
-    const filePath = opts.filePath ?? DEFAULT_FILE;
     const nowFn = opts.now ?? (() => new Date());
     const date = localDate(nowFn());
     const seen = await seenTickers(filePath, date, opts);
@@ -113,4 +114,21 @@ export async function recordSnapshots(rows: ScanRow[], opts: SnapshotOptions = {
     console.warn(`[snapshots] failed to record: ${err instanceof Error ? err.message : String(err)}`);
     return 0;
   }
+}
+
+/**
+ * Append the first fresh (non-cached) result of the day for each ticker.
+ * Returns how many lines were written. NEVER throws — a snapshot failure must
+ * never fail a scan. Disable entirely with SNAPSHOTS_DISABLED=1.
+ *
+ * Concurrent calls for the same file path are serialized through a per-file
+ * in-flight promise chain so that cold-cache rebuilds and dedup checks never
+ * race. Calls for distinct file paths are fully independent.
+ */
+export function recordSnapshots(rows: ScanRow[], opts: SnapshotOptions = {}): Promise<number> {
+  const filePath = opts.filePath ?? DEFAULT_FILE;
+  const prev = fileLocks.get(filePath) ?? Promise.resolve();
+  const run = prev.then(() => doRecord(rows, opts, filePath));
+  fileLocks.set(filePath, run.catch(() => {}));
+  return run;
 }

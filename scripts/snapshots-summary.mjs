@@ -41,7 +41,7 @@ for (const line of raw.split('\n')) {
 }
 
 const dates = [...days].sort();
-const vs = [...versions].sort().join(', v');
+const vs = [...versions].filter((v) => v != null).sort((a, b) => a - b).join(', v');
 console.log(
   `${total} snapshot(s) · ${days.size} day(s) · ${dates[0] ?? '—'} → ${dates.at(-1) ?? '—'} · scoring v${vs}` +
   (corrupt ? ` · ${corrupt} corrupt line(s) skipped` : '')

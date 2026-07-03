@@ -108,4 +108,18 @@ describe('recordSnapshots — resilience', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('disk full'));
     warn.mockRestore();
   });
+
+  it('serializes concurrent calls — no duplicate (date, ticker) lines', async () => {
+    const cache: SnapshotCache = new Map();
+    const slowRead: typeof readFile = (async (...args: Parameters<typeof readFile>) => {
+      await new Promise((r) => setTimeout(r, 20));
+      return readFile(...args);
+    }) as typeof readFile;
+    const [a, b] = await Promise.all([
+      recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache, readFileImpl: slowRead }),
+      recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache, readFileImpl: slowRead }),
+    ]);
+    expect(a + b).toBe(1);
+    expect(await lines()).toHaveLength(1);
+  });
 });
