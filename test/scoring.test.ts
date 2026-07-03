@@ -47,7 +47,7 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
   };
 }
 
-const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false };
+const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false, valueTrap: false, peakCycle: false };
 
 /** Fully-populated non-financial row (10/10 criteria have data). */
 function fullRow(overrides: Partial<ScanRow> = {}): ScanRow {
@@ -260,6 +260,13 @@ describe('computeBreakdown', () => {
     expect(b.peCompression).toBe(0);
   });
 
+  it('still penalizes a cyclical whose estimates are rolling over (fwd > TTM)', () => {
+    // Asymmetric: expected cyclical EPS growth is never rewarded (+1 suppressed),
+    // but expected decline is the honest peak signal and keeps its −1.
+    const b = computeBreakdown(blankRow({ industry: 'Oil & Gas Exploration', trailingPE: 6, forwardPE: 9 }));
+    expect(b.peCompression).toBe(-1);
+  });
+
   // --- #6 Valuation EV/EBITDA (×1) ---
   it('+1 when EV/EBITDA < 15', () => {
     const b = computeBreakdown(blankRow({ evToEbitda: 10 }));
@@ -382,6 +389,24 @@ describe('industry classification helpers', () => {
     expect(isCyclicalIndustry('Automobiles')).toBe(true);
     expect(isCyclicalIndustry('Software')).toBe(false);
     expect(isCyclicalIndustry(null)).toBe(false);
+  });
+
+  it('detects the broader commodity/deep-cyclical set', () => {
+    // The old list was semis + autos only, so an oil producer at peak earnings
+    // scored Strong 14/17 with no cyclical treatment at all.
+    for (const industry of [
+      'Oil & Gas Exploration', 'Oil, Gas & Consumable Fuels', 'Energy Equipment & Services',
+      'Metals & Mining', 'Steel', 'Chemicals', 'Marine', 'Airlines',
+      'Construction Materials', 'Building Products', 'Paper & Forest Products',
+    ]) {
+      expect(isCyclicalIndustry(industry), industry).toBe(true);
+    }
+  });
+
+  it('does not over-match defensives and financials as cyclical', () => {
+    for (const industry of ['Banks', 'Insurance', 'Beverages', 'Pharmaceuticals', 'Electric Utilities', 'Software']) {
+      expect(isCyclicalIndustry(industry), industry).toBe(false);
+    }
   });
 
   it('detects financial industries', () => {
@@ -518,6 +543,68 @@ describe('isCrowded (mega-cap near 52W high)', () => {
   });
 });
 
+describe('value-trap gate (cheap + shrinking cannot rank Strong)', () => {
+  // A falling price simultaneously improves FCF yield, EV/EBITDA, dividend
+  // coverage, and 52W position, while decline shows up in exactly one −2
+  // signal — so a melting ice cube with good cash conversion used to score
+  // Strength 14/17 → STRONG. Cheap + shrinking now caps the tier at Moderate.
+  const trap = () => blankRow({
+    industry: 'Media Agencies', trailingPE: 7, forwardPE: 6.5, fcfYieldPercent: 16,
+    revenueGrowthTTM: -6, debtToEquity: 0.9, interestCoverage: 7, evToEbitda: 4.5,
+    dividendYieldPercent: 6, rangePosition: 0.15, ytdReturn: -25,
+  });
+
+  it('flags the trap archetype and caps it at moderate', () => {
+    const scored = scoreRow(trap());
+    expect(scored.flags.valueTrap).toBe(true);
+    expect(scored.strengthScore).toBeGreaterThanOrEqual(12); // would be strong…
+    expect(scored.tier).toBe('moderate');                    // …but capped
+  });
+
+  it('does not flag sound deep value (revenue still growing)', () => {
+    const scored = scoreRow({ ...trap(), revenueGrowthTTM: 2 });
+    expect(scored.flags.valueTrap).toBe(false);
+    expect(scored.tier).toBe('strong'); // same cheapness, growing → uncapped
+  });
+
+  it('does not flag a declining business that is not optically cheap', () => {
+    const scored = scoreRow(blankRow({ revenueGrowthTTM: -5, evToEbitda: 12, fcfYieldPercent: 4 }));
+    expect(scored.flags.valueTrap).toBe(false);
+  });
+});
+
+describe('peak-cycle gate (cyclical, cheap on trailing, estimates falling)', () => {
+  // The classic cyclical trap: trailing numbers look phenomenal exactly at the
+  // top (low P/E, huge FCF yield, low EV/EBITDA, booming growth) while forward
+  // estimates are already rolling over. Used to score STRONG 14/17.
+  const peak = () => blankRow({
+    industry: 'Oil & Gas Exploration', trailingPE: 6, forwardPE: 9, fcfYieldPercent: 18,
+    revenueGrowthTTM: 30, debtToEquity: 0.4, interestCoverage: 20, evToEbitda: 3.5,
+    dividendYieldPercent: 3, rangePosition: 0.85, ytdReturn: 20,
+  });
+
+  it('flags the peak archetype and caps it at moderate', () => {
+    const scored = scoreRow(peak());
+    expect(scored.flags.peakCycle).toBe(true);
+    expect(scored.tier).not.toBe('strong');
+  });
+
+  it('does not flag a cyclical whose estimates still point up', () => {
+    const scored = scoreRow({ ...peak(), forwardPE: 5 });
+    expect(scored.flags.peakCycle).toBe(false);
+  });
+
+  it('does not flag an expensive cyclical (nothing optically cheap to trap on)', () => {
+    const scored = scoreRow(blankRow({ industry: 'Semiconductors', trailingPE: 30, forwardPE: 35, evToEbitda: 20, fcfYieldPercent: 3 }));
+    expect(scored.flags.peakCycle).toBe(false);
+  });
+
+  it('does not flag non-cyclicals', () => {
+    const scored = scoreRow(blankRow({ industry: 'Software', trailingPE: 6, forwardPE: 9, evToEbitda: 4, fcfYieldPercent: 18 }));
+    expect(scored.flags.peakCycle).toBe(false);
+  });
+});
+
 describe('computeCoverage + minimum-data floor', () => {
   // A null input can never score −1, so sparse rows used to look SAFER than
   // covered ones (an Alpha Vantage failover row cannot be disqualified at all).
@@ -530,10 +617,10 @@ describe('computeCoverage + minimum-data floor', () => {
     expect(c.fraction).toBe(1);
   });
 
-  it('excludes deliberately-neutralized criteria from the denominator (cyclical)', () => {
+  it('keeps peCompression applicable for cyclicals (asymmetric: −1 still scores)', () => {
     const c = computeCoverage(fullRow({ industry: 'Semiconductors' }));
-    expect(c.applicable).toBe(9); // peCompression not applicable
-    expect(c.covered).toBe(9);
+    expect(c.applicable).toBe(10);
+    expect(c.covered).toBe(10);
   });
 
   it('excludes the five neutralized criteria for financials', () => {
@@ -615,6 +702,14 @@ describe('tierFor (neutral signal tiers)', () => {
 
   it('crowding caps an otherwise-strong stock at moderate', () => {
     expect(tierFor(15, 2, { ...NO_FLAGS, crowding: true })).toBe('moderate');
+  });
+
+  it('a value-trap flag caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(14, 3, { ...NO_FLAGS, valueTrap: true })).toBe('moderate');
+  });
+
+  it('a peak-cycle flag caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(14, 2, { ...NO_FLAGS, peakCycle: true })).toBe('moderate');
   });
 });
 

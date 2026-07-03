@@ -86,6 +86,16 @@ export interface RowFlags {
    * otherwise look SAFER than covered ones. Forces the tier to weak.
    */
   insufficientData: boolean;
+  /**
+   * Optically cheap AND revenue shrinking — the cheapness likely prices the
+   * decline. Caps the tier at moderate.
+   */
+  valueTrap: boolean;
+  /**
+   * Cyclical, optically cheap on trailing numbers, with forward estimates
+   * rolling over — the top-of-cycle signature. Caps the tier at moderate.
+   */
+  peakCycle: boolean;
 }
 
 /** How much of the scorecard actually had data behind it. */
@@ -220,9 +230,23 @@ export const CRITERION_KEYS: (keyof ScoreBreakdown)[] = [
   'dividendYield',
 ];
 
-// Industries where a low forward P/E reflects cyclical peak earnings rather
-// than durable growth — compression is neutralized for these.
-const CYCLICAL_PATTERNS = [/semiconductor/i, /automobile/i, /\bautos?\b/i];
+// Industries where trailing earnings swing with the cycle, so a low TTM
+// multiple can mean peak earnings rather than a bargain. Compression is
+// treated asymmetrically for these (expected EPS growth is never rewarded;
+// expected decline keeps its −1) and the peak-cycle gate applies. Deliberately
+// pattern-based on Finnhub's industry labels; deepen to GICS sectors when a
+// sector source is added.
+const CYCLICAL_PATTERNS = [
+  /semiconductor/i,
+  /automobile/i, /\bautos?\b/i, /auto components/i,
+  /\boil\b/i, /\bgas\b/i, /\bcoal\b/i, /petroleum/i, /drilling/i, /energy equipment/i, /consumable fuels/i,
+  /mining/i, /metals/i, /\bsteel\b/i, /aluminum/i,
+  /chemical/i,
+  /\bmarine\b/i, /shipping/i,
+  /airline/i,
+  /construction/i, /building/i, /homebuild/i,
+  /paper/i, /forest/i,
+];
 
 // Industries where leverage is a structural part of the business model, so a
 // high D/E is not a danger signal on its own. For financials the FCF-derived
@@ -301,11 +325,14 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
   const fcfYieldLevel: -1 | 0 | 1 =
     fcf != null && !financial ? (fcf > 5 ? 1 : fcf < 2 ? -1 : 0) : 0;
 
-  // #5 — P/E Compression: FWD < TTM → +1. Neutralized for cyclicals, where a
-  // low forward P/E signals peak earnings (a trap), not durable growth.
+  // #5 — P/E Compression: FWD < TTM → +1. Asymmetric for cyclicals: expected
+  // EPS growth off a cycle ramp is never rewarded (+1 suppressed to 0), but
+  // expected decline (FWD > TTM, estimates rolling over) is the honest peak
+  // signal and keeps its −1.
   let peCompression: -1 | 0 | 1 = 0;
-  if (pe != null && fwdPe != null && !isCyclicalIndustry(row.industry)) {
+  if (pe != null && fwdPe != null) {
     peCompression = fwdPe < pe ? 1 : fwdPe > pe ? -1 : 0;
+    if (peCompression === 1 && isCyclicalIndustry(row.industry)) peCompression = 0;
   }
 
   // #6 — Valuation: EV/EBITDA < 15 → +1, > 25 → −1. Neutralized for
@@ -373,6 +400,47 @@ export function totalScore(breakdown: ScoreBreakdown): number {
 export const MIN_CRITERION_COVERAGE = 0.7;
 
 /**
+ * "Optically cheap" thresholds for the value-trap and peak-cycle gates. A
+ * falling price (or peaking earnings) simultaneously improves FCF yield,
+ * EV/EBITDA, dividend coverage, and 52W position while the deterioration shows
+ * up in at most one −2 signal — so deep optical cheapness combined with an
+ * independent decline signal caps the tier at Moderate instead of letting the
+ * cheapness points add up to Strong.
+ */
+export const TRAP_CHEAP_EV_EBITDA = 8;  // EV/EBITDA below this is "deep cheap"
+export const TRAP_CHEAP_FCF_YIELD = 8;  // FCF yield above this (%) is "deep cheap"
+
+/** Deep optical cheapness on trailing numbers (either lens qualifies). */
+export function isOpticallyCheap(row: ScanRow): boolean {
+  const ev = row.evToEbitda != null && Number.isFinite(row.evToEbitda) ? row.evToEbitda : null;
+  const fcf = row.fcfYieldPercent != null && Number.isFinite(row.fcfYieldPercent) ? row.fcfYieldPercent : null;
+  return (ev != null && ev < TRAP_CHEAP_EV_EBITDA) || (fcf != null && fcf > TRAP_CHEAP_FCF_YIELD);
+}
+
+/**
+ * Value-trap gate: optically cheap AND revenue shrinking. The cheapness is
+ * likely the market pricing the decline, not a mispricing — capped at Moderate
+ * and flagged. Suspect (neutralized) growth never triggers it.
+ */
+export function isValueTrap(row: ScanRow): boolean {
+  const rev = sanitizeRevenueGrowth(row).value;
+  return rev != null && rev < 0 && isOpticallyCheap(row);
+}
+
+/**
+ * Peak-cycle gate: a cyclical that is optically cheap on trailing numbers
+ * while forward estimates are already rolling over (FWD P/E > TTM P/E). That
+ * combination is the classic top-of-cycle signature — trailing figures look
+ * phenomenal precisely at the peak. Capped at Moderate and flagged.
+ */
+export function isPeakCycle(row: ScanRow): boolean {
+  if (!isCyclicalIndustry(row.industry)) return false;
+  const pe = row.trailingPE != null && Number.isFinite(row.trailingPE) ? row.trailingPE : null;
+  const fwd = row.forwardPE != null && Number.isFinite(row.forwardPE) ? row.forwardPE : null;
+  return pe != null && fwd != null && fwd > pe && isOpticallyCheap(row);
+}
+
+/**
  * Count how many applicable criteria actually had data. Deliberately-
  * neutralized criteria (financial FCF/valuation reads, financial/REIT leverage,
  * cyclical P/E compression) are excluded from the denominator — the framework
@@ -397,7 +465,8 @@ export function computeCoverage(row: ScanRow): CriterionCoverage {
     leverage: { applicable: !financial && !isReitIndustry(row.industry), covered: de != null },
     revenueGrowth: { applicable: true, covered: rev != null },
     fcfYieldLevel: { applicable: !financial, covered: fcf != null },
-    peCompression: { applicable: !isCyclicalIndustry(row.industry), covered: pe != null && fwdPe != null },
+    // Asymmetric for cyclicals (−1 still scores), so the criterion consumes data.
+    peCompression: { applicable: true, covered: pe != null && fwdPe != null },
     valuation: { applicable: !financial, covered: evEbitda != null },
     dividendCoverage: { applicable: !financial, covered: divYield != null && (divYield <= 0 || fcf != null) },
     pricePosition: { applicable: true, covered: rangePos != null },
@@ -468,7 +537,8 @@ export function isCrowded(row: ScanRow): boolean {
  */
 export function tierFor(strengthScore: number, riskScore: number, flags: RowFlags): SignalTier {
   if (flags.disqualified || flags.insufficientData || riskScore >= RISK_FLOOR) return 'weak';
-  if (strengthScore >= 12) return flags.crowding ? 'moderate' : 'strong';
+  const capped = flags.crowding || flags.valueTrap || flags.peakCycle;
+  if (strengthScore >= 12) return capped ? 'moderate' : 'strong';
   if (strengthScore >= 7) return 'moderate';
   return 'weak';
 }
@@ -484,6 +554,8 @@ export function scoreRow(row: ScanRow): ScoredRow {
     benignEarningsQuality: breakdown.earningsQuality === -1 && isBenignEarningsQuality(row),
     suspectRevenueGrowth: sanitizeRevenueGrowth(row).suspect,
     insufficientData: hasInsufficientData(row),
+    valueTrap: isValueTrap(row),
+    peakCycle: isPeakCycle(row),
   };
   return {
     row,
@@ -563,7 +635,7 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
       return fcf != null ? formatPercent(fcf) : 'no data';
     case 'peCompression':
       if (pe == null || fwdPe == null) return 'no data';
-      return isCyclicalIndustry(row.industry)
+      return isCyclicalIndustry(row.industry) && fwdPe < pe
         ? `Fwd ${formatPe(fwdPe)} vs TTM ${formatPe(pe)} · cyclical — neutralized`
         : `Fwd ${formatPe(fwdPe)} vs TTM ${formatPe(pe)}`;
     case 'valuation':
@@ -593,7 +665,7 @@ export const CRITERION_BENCHMARK: Record<keyof ScoreBreakdown, { positive: strin
   leverage: { positive: 'D/E < 1.0', negative: 'D/E 2.0–10, or distorted D/E with int. coverage < 2 (neutral: financials, REITs)' },
   revenueGrowth: { positive: '> 10% YoY', negative: '< 0% (declining); implausible values neutralized' },
   fcfYieldLevel: { positive: '> 5%', negative: '< 2% (neutral: financials)' },
-  peCompression: { positive: 'Fwd < TTM (neutral: cyclicals)', negative: 'Fwd > TTM' },
+  peCompression: { positive: 'Fwd < TTM (neutral: cyclicals)', negative: 'Fwd > TTM (incl. cyclicals)' },
   valuation: { positive: 'EV/EBITDA < 15', negative: '> 25 (neutral: financials)' },
   dividendCoverage: { positive: 'FCF Yield > Dividend Yield', negative: 'FCF < Dividend (non-payers, financials: 0)' },
   pricePosition: { positive: '< 40% of 52W range', negative: '> 90% of range' },

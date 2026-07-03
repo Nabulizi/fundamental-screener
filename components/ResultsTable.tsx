@@ -259,6 +259,9 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                         {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < 8 && (
                           <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
                         )}
+                        {(scored.flags.valueTrap || scored.flags.peakCycle) && (
+                          <span className="score-flag" title={scored.flags.valueTrap ? 'Possible value trap: optically cheap with shrinking revenue — capped at Moderate.' : 'Possible cycle peak: cheap on trailing numbers while estimates roll over — capped at Moderate.'}>▽</span>
+                        )}
                         <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
                     );
@@ -304,6 +307,12 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       )}
                       {scored.flags.insufficientData && (
                         <span className="bd-flag" title="Too few criteria have data to trust a tier — missing values can never flag risk, so sparse rows would otherwise look artificially safe.">◌ Insufficient data (tier capped at Weak)</span>
+                      )}
+                      {scored.flags.valueTrap && (
+                        <span className="bd-flag" title="Optically cheap (low EV/EBITDA or high FCF yield) while revenue is shrinking — the cheapness likely prices the decline, not a mispricing. Capped at Moderate.">▽ Possible value trap (cheap + shrinking)</span>
+                      )}
+                      {scored.flags.peakCycle && (
+                        <span className="bd-flag" title="Cyclical that looks cheap on trailing numbers while forward estimates roll over — the classic top-of-cycle signature. Capped at Moderate.">▽ Possible cycle peak (trailing cheap, estimates falling)</span>
                       )}
                       {scored.flags.cyclical && (
                         <span className="bd-flag" title="Cyclical industry — a low forward P/E here often reflects peak earnings, so P/E compression is neutralized.">↻ Cyclical (compression neutralized)</span>

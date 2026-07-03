@@ -106,8 +106,11 @@ optional.
   Earnings Quality is WAIVED from the floor (still costs Risk) when it's a
   benign growth/capex drag — FCF yield ≥ 2% and revenue growth > 20%
   (`isBenignEarningsQuality`); negative/weak FCF never qualifies, preserving
-  cash-burn protection. Adjustments: P/E compression is neutralized for
-  cyclicals (semis/autos); for **financials** ALL FCF-derived criteria
+  cash-burn protection. Adjustments: P/E compression is ASYMMETRIC for
+  cyclicals (broad pattern set: semis, autos, energy, metals/mining, chemicals,
+  steel, marine, airlines, construction/building, paper — a +1 is suppressed,
+  a −1 from estimates rolling over still scores); for **financials** ALL
+  FCF-derived criteria
   (Earnings Quality, FCF Level, Dividend Coverage) plus EV/EBITDA and D/E are
   neutralized (P/FCF and EBITDA are noise for banks/insurers — verified live);
   **REITs** get D/E neutralized (structural leverage) but keep FCF criteria;
@@ -116,6 +119,12 @@ optional.
   coverage < `WEAK_INTEREST_COVERAGE` (2) → −1 (fatal, disqualifies), else
   neutral — buyback distortion (MCD) stays waived, loss-wiped equity doesn't;
   a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  **Trap gates** (both cap the tier at Moderate + flag, because a falling
+  price/peaking earnings improves four criteria at once while decline shows in
+  at most one −2 signal): `isValueTrap` — optically cheap (EV/EBITDA < 8 or
+  FCF yield > 8%, `TRAP_CHEAP_*`) with shrinking revenue; `isPeakCycle` —
+  cyclical, optically cheap on trailing numbers, forward P/E > trailing
+  (estimates rolling over).
   **Data guards:** implausible revenue growth is neutralized + flagged, never
   scored (`sanitizeRevenueGrowth`: financials > 60%, anyone > 300% — Finnhub
   returned 108.98% for JPM live) and never grants the benign-EQ waiver;
