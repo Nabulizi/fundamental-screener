@@ -3,17 +3,25 @@ import { clampFraction } from './range';
 import { formatPercent, formatReturn, formatPe, formatRatio } from './format';
 
 // ---------------------------------------------------------------------------
-// Master Scoring Framework (v2) — 10 criteria, weighted by significance tier,
+// Master Scoring Framework (v3) — 12 criteria, weighted by significance tier,
 // split into two independent scores instead of one signed total.
 //
 //   Tier 1 (×3) — Survival & Quality:  Earnings Quality, Leverage
-//   Tier 2 (×2) — Fundamental Strength: Revenue Growth, FCF Yield, P/E Compression
+//   Tier 2 (×2) — Fundamental Strength: Revenue Growth, Revenue Acceleration,
+//                                        FCF Yield, Margin Inflection,
+//                                        P/E Compression
 //   Tier 3 (×1) — Valuation / Timing:   EV/EBITDA, Dividend Coverage,
 //                                        52W Position, YTD, Dividend Yield
 //
 // Each raw signal is +1 / 0 / −1, then multiplied by its tier weight.
-//   • Strength Score = sum of the POSITIVE weighted signals  (0 … +17)
-//   • Risk Score     = sum of the |NEGATIVE| weighted signals (0 … 16)
+//   • Strength Score = sum of the POSITIVE weighted signals  (0 … +21)
+//   • Risk Score     = sum of the |NEGATIVE| weighted signals (0 … 20)
+//
+// The two improvement criteria (acceleration, margin inflection) score the
+// DERIVATIVE of the business, not its level — turnarounds and pre-recognition
+// improvers show up there first. Tier thresholds are deliberately unchanged:
+// rows without the improvement data score exactly as before, and improvement
+// signals can legitimately lift a stock a tier.
 // They are reported separately: "how good is the opportunity?" and "how
 // dangerous is the stock?" are different questions and a single net number
 // conflates them.
@@ -41,9 +49,13 @@ export interface ScoreBreakdown {
   leverage: -1 | 0 | 1;
   /** #3 — Revenue growth > 10%. ×2 */
   revenueGrowth: -1 | 0 | 1;
-  /** #4 — FCF Yield > 5%. ×2 */
+  /** #4 — Revenue acceleration: quarterly YoY vs TTM YoY (±3pp band). ×2 */
+  revenueAcceleration: -1 | 0 | 1;
+  /** #5 — FCF Yield > 5%. ×2 */
   fcfYieldLevel: -1 | 0 | 1;
-  /** #5 — P/E compression: FWD < TTM (neutralized for cyclicals). ×2 */
+  /** #6 — Margin inflection: TTM operating margin vs 5Y average (±1pp band). ×2 */
+  marginInflection: -1 | 0 | 1;
+  /** #7 — P/E compression: FWD < TTM (asymmetric for cyclicals). ×2 */
   peCompression: -1 | 0 | 1;
   /** #6 — Valuation: EV/EBITDA. ×1 */
   valuation: -1 | 0 | 1;
@@ -111,9 +123,9 @@ export interface CriterionCoverage {
 export interface ScoredRow {
   row: ScanRow;
   breakdown: ScoreBreakdown;
-  /** Sum of positive weighted signals. 0 … +17. */
+  /** Sum of positive weighted signals. 0 … MAX_STRENGTH. */
   strengthScore: number;
-  /** Sum of |negative| weighted signals. 0 … 16. */
+  /** Sum of |negative| weighted signals. 0 … MAX_RISK. */
   riskScore: number;
   coverage: CriterionCoverage;
   flags: RowFlags;
@@ -121,9 +133,9 @@ export interface ScoredRow {
 }
 
 /** Strength score when every criterion is +1. */
-export const MAX_STRENGTH = 17;
+export const MAX_STRENGTH = 21;
 /** Risk score when every (negatable) criterion is −1. */
-export const MAX_RISK = 16;
+export const MAX_RISK = 20;
 /** Risk score at/above which a stock is forced to "weak" regardless of strength. */
 export const RISK_FLOOR = 8;
 
@@ -161,11 +173,20 @@ export const SUSPECT_REV_GROWTH_GENERAL = 300;
  * is implausible (with `suspect: true`) so downstream reads treat it exactly
  * like missing data.
  */
+function sanitizeGrowthValue(raw: number | null | undefined, industry: string | null | undefined): { value: number | null; suspect: boolean } {
+  const v = raw != null && Number.isFinite(raw) ? raw : null;
+  if (v == null) return { value: null, suspect: false };
+  const bound = isFinancialIndustry(industry) ? SUSPECT_REV_GROWTH_FINANCIAL : SUSPECT_REV_GROWTH_GENERAL;
+  return v > bound ? { value: null, suspect: true } : { value: v, suspect: false };
+}
+
 export function sanitizeRevenueGrowth(row: ScanRow): { value: number | null; suspect: boolean } {
-  const raw = row.revenueGrowthTTM != null && Number.isFinite(row.revenueGrowthTTM) ? row.revenueGrowthTTM : null;
-  if (raw == null) return { value: null, suspect: false };
-  const bound = isFinancialIndustry(row.industry) ? SUSPECT_REV_GROWTH_FINANCIAL : SUSPECT_REV_GROWTH_GENERAL;
-  return raw > bound ? { value: null, suspect: true } : { value: raw, suspect: false };
+  return sanitizeGrowthValue(row.revenueGrowthTTM, row.industry);
+}
+
+/** Quarterly YoY growth under the same sanity bounds as the TTM figure. */
+export function sanitizeQuarterlyRevGrowth(row: ScanRow): { value: number | null; suspect: boolean } {
+  return sanitizeGrowthValue(row.revenueGrowthQuarterly, row.industry);
 }
 
 /**
@@ -188,12 +209,23 @@ export const EQ_CONVERSION_WEAK = 0.7;   // FCF/NI below this → −1
 export const BENIGN_EQ_MIN_FCF_YIELD = 2;    // FCF yield must be ≥ this (not weak/negative)
 export const BENIGN_EQ_MIN_REV_GROWTH = 20;  // revenue growth must exceed this (hyper-growth)
 
+/**
+ * Improvement thresholds. Levels tell you where a business IS; these two
+ * criteria score the DERIVATIVE — where it's heading — which is what
+ * turnarounds and pre-recognition improvers show first. Both use the same
+ * `metric=all` response the app already fetches (zero extra API calls).
+ */
+export const REV_ACCEL_THRESHOLD_PP = 3;   // quarterly YoY vs TTM YoY, in percentage points
+export const MARGIN_INFLECTION_PP = 1;     // TTM operating margin vs 5Y average, in pp
+
 /** Tier weight for each criterion, ordered by significance. */
 export const CRITERION_WEIGHT: Record<keyof ScoreBreakdown, number> = {
   earningsQuality: 3,
   leverage: 3,
   revenueGrowth: 2,
+  revenueAcceleration: 2,
   fcfYieldLevel: 2,
+  marginInflection: 2,
   peCompression: 2,
   valuation: 1,
   dividendCoverage: 1,
@@ -207,7 +239,9 @@ export const CRITERION_LABELS: Record<keyof ScoreBreakdown, string> = {
   earningsQuality: 'Earnings Quality',
   leverage: 'Leverage (D/E)',
   revenueGrowth: 'Revenue Growth',
+  revenueAcceleration: 'Revenue Acceleration',
   fcfYieldLevel: 'FCF Yield Level',
+  marginInflection: 'Margin Inflection',
   peCompression: 'P/E Compression',
   valuation: 'Valuation (EV/EBITDA)',
   dividendCoverage: 'Dividend Coverage',
@@ -221,7 +255,9 @@ export const CRITERION_KEYS: (keyof ScoreBreakdown)[] = [
   'earningsQuality',
   'leverage',
   'revenueGrowth',
+  'revenueAcceleration',
   'fcfYieldLevel',
+  'marginInflection',
   'peCompression',
   'valuation',
   'dividendCoverage',
@@ -321,9 +357,31 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
   const revenueGrowth: -1 | 0 | 1 =
     revGrowth != null ? (revGrowth > 10 ? 1 : revGrowth < 0 ? -1 : 0) : 0;
 
-  // #4 — FCF Yield level: > 5% → +1, < 2% → −1. Neutralized for financials.
+  // #4 — Revenue acceleration: most-recent-quarter YoY vs TTM YoY. Scores the
+  // derivative of growth — accelerating out of a decline is the turnaround
+  // signature. Both figures must pass the sanity bounds.
+  const revQ = sanitizeQuarterlyRevGrowth(row).value;
+  let revenueAcceleration: -1 | 0 | 1 = 0;
+  if (revGrowth != null && revQ != null) {
+    revenueAcceleration =
+      revQ > revGrowth + REV_ACCEL_THRESHOLD_PP ? 1 :
+      revQ < revGrowth - REV_ACCEL_THRESHOLD_PP ? -1 : 0;
+  }
+
+  // #5 — FCF Yield level: > 5% → +1, < 2% → −1. Neutralized for financials.
   const fcfYieldLevel: -1 | 0 | 1 =
     fcf != null && !financial ? (fcf > 5 ? 1 : fcf < 2 ? -1 : 0) : 0;
+
+  // #6 — Margin inflection: TTM operating margin vs its own 5Y average.
+  // Above the baseline → operating leverage kicking in; below → compressing.
+  const opTtm = n(row.operatingMarginTTM);
+  const op5y = n(row.operatingMargin5Y);
+  let marginInflection: -1 | 0 | 1 = 0;
+  if (opTtm != null && op5y != null) {
+    marginInflection =
+      opTtm > op5y + MARGIN_INFLECTION_PP ? 1 :
+      opTtm < op5y - MARGIN_INFLECTION_PP ? -1 : 0;
+  }
 
   // #5 — P/E Compression: FWD < TTM → +1. Asymmetric for cyclicals: expected
   // EPS growth off a cycle ramp is never rewarded (+1 suppressed to 0), but
@@ -365,7 +423,9 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
     earningsQuality,
     leverage,
     revenueGrowth,
+    revenueAcceleration,
     fcfYieldLevel,
+    marginInflection,
     peCompression,
     valuation,
     dividendCoverage,
@@ -464,7 +524,9 @@ export function computeCoverage(row: ScanRow): CriterionCoverage {
     earningsQuality: { applicable: !financial, covered: fcf != null && (fcf < 0 || pe != null) },
     leverage: { applicable: !financial && !isReitIndustry(row.industry), covered: de != null },
     revenueGrowth: { applicable: true, covered: rev != null },
+    revenueAcceleration: { applicable: true, covered: rev != null && sanitizeQuarterlyRevGrowth(row).value != null },
     fcfYieldLevel: { applicable: !financial, covered: fcf != null },
+    marginInflection: { applicable: true, covered: n(row.operatingMarginTTM) != null && n(row.operatingMargin5Y) != null },
     // Asymmetric for cyclicals (−1 still scores), so the criterion consumes data.
     peCompression: { applicable: true, covered: pe != null && fwdPe != null },
     valuation: { applicable: !financial, covered: evEbitda != null },
@@ -630,9 +692,21 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
         ? `${formatReturn(rev)} YoY · implausible — neutralized (verify at source)`
         : `${formatReturn(rev)} YoY`;
     }
+    case 'revenueAcceleration': {
+      const q = sanitizeQuarterlyRevGrowth(row).value;
+      const t = sanitizeRevenueGrowth(row).value;
+      if (q == null || t == null) return 'no data';
+      return `Q ${formatReturn(q)} vs TTM ${formatReturn(t)} YoY`;
+    }
     case 'fcfYieldLevel':
       if (isFinancialIndustry(row.industry)) return 'financial — FCF-based read neutralized';
       return fcf != null ? formatPercent(fcf) : 'no data';
+    case 'marginInflection': {
+      const t = n(row.operatingMarginTTM);
+      const avg = n(row.operatingMargin5Y);
+      if (t == null || avg == null) return 'no data';
+      return `Op margin ${formatPercent(t)} vs 5Y avg ${formatPercent(avg)}`;
+    }
     case 'peCompression':
       if (pe == null || fwdPe == null) return 'no data';
       return isCyclicalIndustry(row.industry) && fwdPe < pe
@@ -664,7 +738,9 @@ export const CRITERION_BENCHMARK: Record<keyof ScoreBreakdown, { positive: strin
   earningsQuality: { positive: 'FCF/NI conversion > 1.0', negative: 'FCF/NI < 0.7, or FCF < 0 (neutral: financials)' },
   leverage: { positive: 'D/E < 1.0', negative: 'D/E 2.0–10, or distorted D/E with int. coverage < 2 (neutral: financials, REITs)' },
   revenueGrowth: { positive: '> 10% YoY', negative: '< 0% (declining); implausible values neutralized' },
+  revenueAcceleration: { positive: 'Quarterly YoY > TTM YoY + 3pp', negative: 'Quarterly YoY < TTM YoY − 3pp' },
   fcfYieldLevel: { positive: '> 5%', negative: '< 2% (neutral: financials)' },
+  marginInflection: { positive: 'Op margin TTM > 5Y avg + 1pp', negative: 'Op margin TTM < 5Y avg − 1pp' },
   peCompression: { positive: 'Fwd < TTM (neutral: cyclicals)', negative: 'Fwd > TTM (incl. cyclicals)' },
   valuation: { positive: 'EV/EBITDA < 15', negative: '> 25 (neutral: financials)' },
   dividendCoverage: { positive: 'FCF Yield > Dividend Yield', negative: 'FCF < Dividend (non-payers, financials: 0)' },

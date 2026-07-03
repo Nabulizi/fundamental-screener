@@ -10,6 +10,7 @@ import {
   scoreRow, criterionEvidence,
   type ScoredRow, type SignalTier,
   CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
+  MAX_STRENGTH, MAX_RISK,
 } from '@/lib/scoring';
 
 const FRESHNESS_TITLE: Record<Freshness, string> = {
@@ -245,16 +246,16 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       <td
                         key={`${row.ticker}-${idx}`}
                         className={`num score-cell score-${tier}${scored.flags.disqualified ? ' score-disqualified' : ''}`}
-                        title={`Strength ${scored.strengthScore}/17 · Risk ${scored.riskScore}/16 · Data ${scored.coverage.covered}/${scored.coverage.applicable} — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
+                        title={`Strength ${scored.strengthScore}/${MAX_STRENGTH} · Risk ${scored.riskScore}/${MAX_RISK} · Data ${scored.coverage.covered}/${scored.coverage.applicable} — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
                         onClick={() => toggleExpanded(row.ticker)}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(row.ticker); } }}
                       >
                         <span className="score-value">{scored.strengthScore}</span>
-                        <span className="score-max">/17</span>
+                        <span className="score-max">/{MAX_STRENGTH}</span>
                         {(scored.flags.disqualified || scored.riskScore >= 8) && (
-                          <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/16)`}>⚠</span>
+                          <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/${MAX_RISK})`}>⚠</span>
                         )}
                         {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < 8 && (
                           <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
@@ -299,8 +300,8 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       })}
                     </div>
                     <div className="breakdown-meta">
-                      <span className="bd-strength">Strength {scored.strengthScore}/17</span>
-                      <span className="bd-risk">Risk {scored.riskScore}/16</span>
+                      <span className="bd-strength">Strength {scored.strengthScore}/{MAX_STRENGTH}</span>
+                      <span className="bd-risk">Risk {scored.riskScore}/{MAX_RISK}</span>
                       <span className="bd-coverage" title="Applicable criteria with data behind them. Deliberately-neutralized criteria (e.g. FCF reads for financials) are excluded.">Data {scored.coverage.covered}/{scored.coverage.applicable}</span>
                       {scored.flags.suspectRevenueGrowth && (
                         <span className="bd-flag" title="The provider's revenue-growth figure is implausible (beyond sanity bounds) — neutralized rather than scored. Verify at the source.">⚑ Revenue growth looks implausible (neutralized)</span>

@@ -95,6 +95,9 @@ export function normalizeFinnhub(
   const debtEquityRaw = toNumber(metric['totalDebt/totalEquityQuarterly']);
   const evEbitdaRaw = toNumber(metric['evEbitdaTTM']);
   const interestCoverageRaw = toNumber(metric['netInterestCoverageTTM']);
+  const revenueGrowthQuarterlyRaw = toNumber(metric['revenueGrowthQuarterlyYoy']);
+  const operatingMarginTtmRaw = toNumber(metric['operatingMarginTTM']);
+  const operatingMargin5yRaw = toNumber(metric['operatingMargin5Y']);
   // A real stock price is never <= 0; treat that as "no price" (unavailable).
   const rawPrice = toNumber(quote?.c);
   const currentPrice = rawPrice != null && rawPrice > 0 ? rawPrice : null;
@@ -124,6 +127,9 @@ export function normalizeFinnhub(
     debtToEquity: debtEquityRaw,
     evToEbitda: evEbitdaRaw != null && evEbitdaRaw > 0 ? evEbitdaRaw : null,
     interestCoverage: interestCoverageRaw,
+    revenueGrowthQuarterly: revenueGrowthQuarterlyRaw,
+    operatingMarginTTM: operatingMarginTtmRaw,
+    operatingMargin5Y: operatingMargin5yRaw,
     currentPrice,
     // Raw (unclamped) position; null when price or range is unavailable/invalid.
     rangePosition: computeRangePosition(currentPrice, low, high),

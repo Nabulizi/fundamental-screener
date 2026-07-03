@@ -106,6 +106,9 @@ export function normalizeAlphaVantage(
     debtToEquity: null,
     evToEbitda: null,
     interestCoverage: null,
+    revenueGrowthQuarterly: null,
+    operatingMarginTTM: null,
+    operatingMargin5Y: null,
     currentPrice,
     rangePosition: computeRangePosition(currentPrice, low, high),
     retrievedAt

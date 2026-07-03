@@ -49,10 +49,11 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
 
 const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false, valueTrap: false, peakCycle: false };
 
-/** Fully-populated non-financial row (10/10 criteria have data). */
+/** Fully-populated non-financial row (12/12 criteria have data; improvement fields neutral). */
 function fullRow(overrides: Partial<ScanRow> = {}): ScanRow {
   return blankRow({
     trailingPE: 20, forwardPE: 15, fcfYieldPercent: 8, revenueGrowthTTM: 15,
+    revenueGrowthQuarterly: 15, operatingMarginTTM: 20, operatingMargin5Y: 20,
     debtToEquity: 0.5, evToEbitda: 10, dividendYieldPercent: 3,
     rangePosition: 0.3, ytdReturn: 10, ...overrides,
   });
@@ -215,6 +216,60 @@ describe('computeBreakdown', () => {
     const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 350 });
     expect(isBenignEarningsQuality(row)).toBe(false);
     expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  // --- Revenue Acceleration (×2): quarterly YoY vs TTM YoY ---
+  // The screener used to see only growth LEVELS, so an accelerating business
+  // scored identically to a static one and turnarounds were invisible.
+  it('+1 when quarterly growth exceeds TTM growth by 3pp+', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 18 }));
+    expect(b.revenueAcceleration).toBe(1);
+  });
+
+  it('−1 when quarterly growth trails TTM growth by 3pp+ (decelerating)', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 5 }));
+    expect(b.revenueAcceleration).toBe(-1);
+  });
+
+  it('0 inside the ±3pp band (steady growth)', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 13 }));
+    expect(b.revenueAcceleration).toBe(0);
+  });
+
+  it('detects acceleration out of a decline (turnaround signature)', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: -2, revenueGrowthQuarterly: 4 }));
+    expect(b.revenueAcceleration).toBe(1);
+  });
+
+  it('0 when either growth figure is missing', () => {
+    expect(computeBreakdown(blankRow({ revenueGrowthTTM: 12 })).revenueAcceleration).toBe(0);
+    expect(computeBreakdown(blankRow({ revenueGrowthQuarterly: 18 })).revenueAcceleration).toBe(0);
+  });
+
+  it('0 when either growth figure is implausible (same sanity bounds as level)', () => {
+    expect(computeBreakdown(blankRow({ industry: 'Banks', revenueGrowthTTM: 108.98, revenueGrowthQuarterly: 5 })).revenueAcceleration).toBe(0);
+    expect(computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 350 })).revenueAcceleration).toBe(0);
+  });
+
+  // --- Margin Inflection (×2): TTM operating margin vs 5Y average ---
+  it('+1 when TTM operating margin exceeds the 5Y average by 1pp+', () => {
+    const b = computeBreakdown(blankRow({ operatingMarginTTM: 14, operatingMargin5Y: 11 }));
+    expect(b.marginInflection).toBe(1);
+  });
+
+  it('−1 when TTM operating margin trails the 5Y average by 1pp+ (compressing)', () => {
+    const b = computeBreakdown(blankRow({ operatingMarginTTM: 8, operatingMargin5Y: 11 }));
+    expect(b.marginInflection).toBe(-1);
+  });
+
+  it('0 inside the ±1pp band (stable margins)', () => {
+    const b = computeBreakdown(blankRow({ operatingMarginTTM: 11.5, operatingMargin5Y: 11 }));
+    expect(b.marginInflection).toBe(0);
+  });
+
+  it('0 when either margin is missing', () => {
+    expect(computeBreakdown(blankRow({ operatingMarginTTM: 14 })).marginInflection).toBe(0);
+    expect(computeBreakdown(blankRow({ operatingMargin5Y: 11 })).marginInflection).toBe(0);
   });
 
   // --- #4 FCF Yield Level (×2) ---
@@ -421,15 +476,17 @@ describe('industry classification helpers', () => {
 describe('computeScores (split strength / risk)', () => {
   it('strength sums only positive weighted signals', () => {
     const breakdown: ScoreBreakdown = {
-      earningsQuality: 1,   // ×3 = +3
-      leverage: 1,           // ×3 = +3
-      revenueGrowth: 1,      // ×2 = +2
-      fcfYieldLevel: 1,      // ×2 = +2
-      peCompression: -1,     // ×2 = -2 (→ risk)
-      valuation: 1,          // ×1 = +1
+      earningsQuality: 1,     // ×3 = +3
+      leverage: 1,            // ×3 = +3
+      revenueGrowth: 1,       // ×2 = +2
+      revenueAcceleration: 0,
+      fcfYieldLevel: 1,       // ×2 = +2
+      marginInflection: 0,
+      peCompression: -1,      // ×2 = -2 (→ risk)
+      valuation: 1,           // ×1 = +1
       dividendCoverage: 0,
-      pricePosition: -1,     // ×1 = -1 (→ risk)
-      ytdMomentum: -1,       // ×1 = -1 (→ risk)
+      pricePosition: -1,      // ×1 = -1 (→ risk)
+      ytdMomentum: -1,        // ×1 = -1 (→ risk)
       dividendYield: 0,
     };
     const { strength, risk } = computeScores(breakdown);
@@ -438,23 +495,23 @@ describe('computeScores (split strength / risk)', () => {
     expect(totalScore(breakdown)).toBe(7); // strength − risk
   });
 
-  it('max strength is +17', () => {
+  it('max strength is +21', () => {
     const all: ScoreBreakdown = {
-      earningsQuality: 1, leverage: 1, revenueGrowth: 1, fcfYieldLevel: 1,
-      peCompression: 1, valuation: 1, dividendCoverage: 1, pricePosition: 1,
-      ytdMomentum: 1, dividendYield: 1,
+      earningsQuality: 1, leverage: 1, revenueGrowth: 1, revenueAcceleration: 1,
+      fcfYieldLevel: 1, marginInflection: 1, peCompression: 1, valuation: 1,
+      dividendCoverage: 1, pricePosition: 1, ytdMomentum: 1, dividendYield: 1,
     };
-    expect(computeScores(all).strength).toBe(17);
+    expect(computeScores(all).strength).toBe(21);
     expect(computeScores(all).risk).toBe(0);
   });
 
-  it('max risk is 16 (dividendYield never negative)', () => {
+  it('max risk is 20 (dividendYield never negative)', () => {
     const all: ScoreBreakdown = {
-      earningsQuality: -1, leverage: -1, revenueGrowth: -1, fcfYieldLevel: -1,
-      peCompression: -1, valuation: -1, dividendCoverage: -1, pricePosition: -1,
-      ytdMomentum: -1, dividendYield: 0,
+      earningsQuality: -1, leverage: -1, revenueGrowth: -1, revenueAcceleration: -1,
+      fcfYieldLevel: -1, marginInflection: -1, peCompression: -1, valuation: -1,
+      dividendCoverage: -1, pricePosition: -1, ytdMomentum: -1, dividendYield: 0,
     };
-    expect(computeScores(all).risk).toBe(16);
+    expect(computeScores(all).risk).toBe(20);
     expect(computeScores(all).strength).toBe(0);
   });
 
@@ -462,7 +519,9 @@ describe('computeScores (split strength / risk)', () => {
     expect(CRITERION_WEIGHT.earningsQuality).toBe(3);
     expect(CRITERION_WEIGHT.leverage).toBe(3);
     expect(CRITERION_WEIGHT.revenueGrowth).toBe(2);
+    expect(CRITERION_WEIGHT.revenueAcceleration).toBe(2);
     expect(CRITERION_WEIGHT.fcfYieldLevel).toBe(2);
+    expect(CRITERION_WEIGHT.marginInflection).toBe(2);
     expect(CRITERION_WEIGHT.peCompression).toBe(2);
     expect(CRITERION_WEIGHT.valuation).toBe(1);
     expect(CRITERION_WEIGHT.dividendCoverage).toBe(1);
@@ -605,34 +664,61 @@ describe('peak-cycle gate (cyclical, cheap on trailing, estimates falling)', () 
   });
 });
 
+describe('improvement detection (turnaround / pre-recognition)', () => {
+  it('lifts a turnaround with accelerating revenue and inflecting margins to moderate', () => {
+    // Losses ending (no trailing P/E), estimates positive, growth turning up,
+    // margins above the 5Y average — used to score Weak 3/17, invisible.
+    const scored = scoreRow(blankRow({
+      trailingPE: null, forwardPE: 15, fcfYieldPercent: 2.5, revenueGrowthTTM: -2,
+      revenueGrowthQuarterly: 4, operatingMarginTTM: 6, operatingMargin5Y: 3,
+      debtToEquity: 1.5, interestCoverage: 4, evToEbitda: 12, dividendYieldPercent: 0,
+      rangePosition: 0.35, ytdReturn: 15,
+    }));
+    expect(scored.breakdown.revenueAcceleration).toBe(1);
+    expect(scored.breakdown.marginInflection).toBe(1);
+    expect(scored.tier).toBe('moderate');
+  });
+
+  it('ranks an inflecting business above its static twin', () => {
+    const base = {
+      trailingPE: 21, forwardPE: 17, fcfYieldPercent: 4.5, revenueGrowthTTM: 12,
+      debtToEquity: 0.7, interestCoverage: 12, evToEbitda: 13, dividendYieldPercent: 0.5,
+      rangePosition: 0.45, ytdReturn: 3,
+    };
+    const staticTwin = scoreRow(blankRow({ ...base, revenueGrowthQuarterly: 12, operatingMarginTTM: 11, operatingMargin5Y: 11 }));
+    const inflecting = scoreRow(blankRow({ ...base, revenueGrowthQuarterly: 18, operatingMarginTTM: 14, operatingMargin5Y: 11 }));
+    expect(inflecting.strengthScore).toBe(staticTwin.strengthScore + 4);
+  });
+});
+
 describe('computeCoverage + minimum-data floor', () => {
   // A null input can never score −1, so sparse rows used to look SAFER than
   // covered ones (an Alpha Vantage failover row cannot be disqualified at all).
   // Coverage measures how much of the scorecard actually had data; below the
   // floor a row cannot tier above weak, and the flag says why.
-  it('counts 10/10 for a fully-populated non-financial row', () => {
+  it('counts 12/12 for a fully-populated non-financial row', () => {
     const c = computeCoverage(fullRow());
-    expect(c.covered).toBe(10);
-    expect(c.applicable).toBe(10);
+    expect(c.covered).toBe(12);
+    expect(c.applicable).toBe(12);
     expect(c.fraction).toBe(1);
   });
 
   it('keeps peCompression applicable for cyclicals (asymmetric: −1 still scores)', () => {
     const c = computeCoverage(fullRow({ industry: 'Semiconductors' }));
-    expect(c.applicable).toBe(10);
-    expect(c.covered).toBe(10);
+    expect(c.applicable).toBe(12);
+    expect(c.covered).toBe(12);
   });
 
   it('excludes the five neutralized criteria for financials', () => {
     // EQ, leverage, FCF level, dividend coverage, valuation are all neutralized.
     const c = computeCoverage(fullRow({ industry: 'Banks' }));
-    expect(c.applicable).toBe(5);
-    expect(c.covered).toBe(5);
+    expect(c.applicable).toBe(7);
+    expect(c.covered).toBe(7);
   });
 
-  it('counts suspect revenue growth as uncovered, not covered', () => {
+  it('counts suspect revenue growth as uncovered (level AND acceleration)', () => {
     const c = computeCoverage(fullRow({ revenueGrowthTTM: 350 }));
-    expect(c.covered).toBe(9);
+    expect(c.covered).toBe(10); // revenueGrowth + revenueAcceleration both uncovered
   });
 
   it('flags an AV-failover-shaped row as insufficient and floors it to weak', () => {
@@ -908,14 +994,16 @@ describe('breakdownTooltip', () => {
     const breakdown = computeBreakdown(blankRow({ trailingPE: 20, forwardPE: 15 }));
     const tip = breakdownTooltip(breakdown);
     expect(tip).toContain('P/E Compression (×2): +2');
-    expect(tip.split('\n').length).toBe(10);
+    expect(tip.split('\n').length).toBe(12);
   });
 
-  it('shows all 10 criteria in significance order', () => {
+  it('shows all 12 criteria in significance order', () => {
     const breakdown = computeBreakdown(blankRow());
     const lines = breakdownTooltip(breakdown).split('\n');
     expect(lines[0]).toContain('Earnings Quality');
     expect(lines[1]).toContain('Leverage');
-    expect(lines[9]).toContain('Dividend Yield');
+    expect(lines[3]).toContain('Revenue Acceleration');
+    expect(lines[5]).toContain('Margin Inflection');
+    expect(lines[11]).toContain('Dividend Yield');
   });
 });

@@ -33,6 +33,15 @@ export interface ScanRow {
    * null/absent means the provider did not supply it.
    */
   interestCoverage?: number | null;
+  /**
+   * Most-recent-quarter revenue growth YoY as a percentage. Compared against
+   * `revenueGrowthTTM` by the revenue-acceleration criterion. Optional.
+   */
+  revenueGrowthQuarterly?: number | null;
+  /** Operating margin TTM as a percentage. Used by the margin-inflection criterion. Optional. */
+  operatingMarginTTM?: number | null;
+  /** Operating margin 5-year average as a percentage. Baseline for margin inflection. Optional. */
+  operatingMargin5Y?: number | null;
   /** Current price in `currency`. Optional — populated only when the provider quote is available. */
   currentPrice?: number | null;
   /** Position within the 52-week range, 0..1 (low..high). Null when inputs are missing/invalid. */

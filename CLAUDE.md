@@ -7,8 +7,8 @@ Guidance for working in this repo. Keep it current when conventions change.
 Next.js 14 (App Router, TypeScript) fundamental screener. A user enters a watchlist of
 tickers and gets a sortable comparison table of 13 columns (Symbol, Score,
 Mkt Cap, Price, YTD, 52W Range, P/E TTM, P/E Fwd, Div Yld, FCF Yld, Rev Grw,
-D/E, EV/EBITDA) plus a weighted composite scoring system (10 criteria, tier
-weights ×3/×2/×1, split into a Strength Score 0–17 and a Risk Score 0–16, with
+D/E, EV/EBITDA) plus a weighted composite scoring system (12 criteria, tier
+weights ×3/×2/×1, split into a Strength Score 0–21 and a Risk Score 0–20, with
 hard-floor disqualifiers and cyclical/financial/crowding adjustments).
 Informational only — the UI must never give buy/sell advice or imply missing
 data equals zero; signal tiers are neutral (Strong / Moderate / Weak).
@@ -39,8 +39,8 @@ and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`)
 - `lib/scan.ts` — per-ticker orchestration with bounded concurrency + cache.
 - `lib/clientScan.ts` — drives the scan one ticker at a time from the browser for
   real "X of N" progress (one POST per ticker).
-- `lib/scoring.ts` — weighted composite scoring (10 criteria, 3 tier weights),
-  split into a Strength Score (0–17) and Risk Score (0–16). Pure functions:
+- `lib/scoring.ts` — weighted composite scoring (12 criteria, 3 tier weights),
+  split into a Strength Score (0–21) and Risk Score (0–20). Pure functions:
   `computeBreakdown`, `computeScores`, `scoreRow`, `isDisqualified`, `isCrowded`,
   `tierFor`, plus `isCyclicalIndustry`/`isFinancialIndustry`. Neutral tiers:
   `'strong' | 'moderate' | 'weak'`. `totalScore` (strength − risk) is retained
@@ -125,9 +125,18 @@ optional.
   FCF yield > 8%, `TRAP_CHEAP_*`) with shrinking revenue; `isPeakCycle` —
   cyclical, optically cheap on trailing numbers, forward P/E > trailing
   (estimates rolling over).
+  **Improvement criteria** (×2 each, from `metric=all` fields already
+  fetched): Revenue Acceleration — quarterly YoY vs TTM YoY, ±3pp band
+  (`REV_ACCEL_THRESHOLD_PP`); Margin Inflection — TTM operating margin vs its
+  5Y average, ±1pp band (`MARGIN_INFLECTION_PP`). They score the DERIVATIVE
+  (turnaround/pre-recognition detection); tier thresholds are deliberately
+  unchanged (12+ Strong, 7–11 Moderate), so rows without the data are
+  unaffected and improvement can legitimately lift a tier. Max scores are
+  Strength 21 / Risk 20 — use `MAX_STRENGTH`/`MAX_RISK`, never literals.
   **Data guards:** implausible revenue growth is neutralized + flagged, never
-  scored (`sanitizeRevenueGrowth`: financials > 60%, anyone > 300% — Finnhub
-  returned 108.98% for JPM live) and never grants the benign-EQ waiver;
+  scored (`sanitizeRevenueGrowth`, and `sanitizeQuarterlyRevGrowth` for the
+  acceleration input: financials > 60%, anyone > 300% — Finnhub returned
+  108.98% for JPM live) and never grants the benign-EQ waiver;
   `computeCoverage` counts applicable criteria with data (deliberately-
   neutralized ones excluded from the denominator) and `hasInsufficientData`
   (coverage < 0.7, or missing FCF/D/E where applicable) floors the tier to
