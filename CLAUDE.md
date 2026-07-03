@@ -45,6 +45,10 @@ and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`)
   `tierFor`, plus `isCyclicalIndustry`/`isFinancialIndustry`. Neutral tiers:
   `'strong' | 'moderate' | 'weak'`. `totalScore` (strength − risk) is retained
   as a convenience.
+- `lib/snapshotStore.ts` — append-only JSONL scan history (`data/snapshots.jsonl`,
+  git-ignored): first fresh result per ticker per local day, raw row + score
+  computed at write time + `SCORING_VERSION` stamp. `recordSnapshots` NEVER
+  throws; disable with `SNAPSHOTS_DISABLED=1`. Summary: `npm run snapshots`.
 - `lib/circuitBreaker.ts` — per-ticker failure tracking; skips after 3 failures
   for 60 s cooldown.
 - `lib/fearGreed.ts` + `app/api/feargreed/route.ts` — CNN Fear & Greed badge.
@@ -163,3 +167,7 @@ optional.
   expandable detail row.
 - `SortKey` includes `'score'` which is not a `ScanRow` field — `sortRows`
   accepts an optional `scoreMap` parameter for this virtual column.
+- **Bump `SCORING_VERSION`** (`lib/scoring.ts`) whenever criteria, thresholds,
+  or weights change — snapshots stamp it to separate methodology eras. Bump
+  `SNAPSHOT_SCHEMA_VERSION` (`lib/snapshotStore.ts`) only if the JSONL line
+  format changes.

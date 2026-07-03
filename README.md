@@ -146,6 +146,15 @@ stored raw (null when price/range missing or `high ≤ low`) and clamped to 0–
 - **Rate limits:** on HTTP 429 the app retries **once**, honoring `Retry-After`
   (seconds or HTTP-date), capped with small jitter to avoid retry storms.
 
+## Scan history (snapshots)
+
+Every scan appends the **first fresh result per ticker per day** to a local
+`data/snapshots.jsonl` (git-ignored): the raw provider row, the computed
+score, and version stamps (`scoringVersion`, schema `v`). This builds the
+longitudinal record needed to eventually validate scoring thresholds against
+forward returns. `npm run snapshots` prints a summary. Set
+`SNAPSHOTS_DISABLED=1` to turn recording off.
+
 ## Known provider limitations
 
 - Finnhub free tier is roughly 60 requests/minute (plan-dependent and subject to
