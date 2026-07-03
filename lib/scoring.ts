@@ -151,6 +151,14 @@ export const MAX_RISK = 20;
 /** Risk score at/above which a stock is forced to "weak" regardless of strength. */
 export const RISK_FLOOR = 8;
 
+/**
+ * Methodology version stamped into scan snapshots (lib/snapshotStore.ts).
+ * BUMP THIS whenever criteria, thresholds, or weights change — it separates
+ * methodology eras in the longitudinal record so v3 scores are never compared
+ * naively against scores produced by different rules.
+ */
+export const SCORING_VERSION = 3;
+
 /** Mega-cap cutoff (raw currency units) for the crowding overlay. */
 export const MEGA_CAP_THRESHOLD = 200_000_000_000;
 

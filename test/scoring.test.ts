@@ -18,6 +18,7 @@ import {
   CRITERION_BENCHMARK,
   CRITERION_KEYS,
   MEGA_CAP_THRESHOLD,
+  SCORING_VERSION,
   type ScoreBreakdown,
   type RowFlags,
 } from '@/lib/scoring';
@@ -1103,5 +1104,12 @@ describe('breakdownTooltip', () => {
     expect(lines[3]).toContain('Revenue Acceleration');
     expect(lines[5]).toContain('Margin Inflection');
     expect(lines[11]).toContain('Dividend Yield');
+  });
+});
+
+describe('SCORING_VERSION', () => {
+  it('is a positive integer (stamped into scan snapshots)', () => {
+    expect(Number.isInteger(SCORING_VERSION)).toBe(true);
+    expect(SCORING_VERSION).toBeGreaterThanOrEqual(3);
   });
 });
