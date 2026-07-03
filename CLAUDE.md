@@ -102,11 +102,21 @@ optional.
   elimination), a Risk Score ≥ 8, or insufficient data coverage (below).
   Earnings Quality is the FCF/NI **conversion ratio** (`fcfYield × PE / 100`;
   +1 > 1.0, −1 < 0.7 — valuation-neutral by construction; do NOT revert to an
-  absolute yield-gap, which is biased against low multiples). Exception: a −1
-  Earnings Quality is WAIVED from the floor (still costs Risk) when it's a
+  absolute yield-gap, which is biased against low multiples). **Graduated
+  eliminators** (binary cliffs on noisy TTM data are below institutional
+  evidence standards): an EQ −1 disqualifies only when unambiguous — FCF < 0
+  or conversion < `EQ_CONVERSION_CRITICAL` (0.5); the soft band 0.5–0.7 costs
+  Risk and CAPS the tier at Moderate (`softEarningsQuality` flag). Waiver: a
   benign growth/capex drag — FCF yield ≥ 2% and revenue growth > 20%
-  (`isBenignEarningsQuality`); negative/weak FCF never qualifies, preserving
-  cash-burn protection. Adjustments: P/E compression is ASYMMETRIC for
+  (`isBenignEarningsQuality`) — suppresses both the floor and the cap;
+  negative/weak FCF never qualifies, preserving cash-burn protection.
+  **Leverage is coverage-first**: interest coverage < `WEAK_INTEREST_COVERAGE`
+  (2) scores −1 at ANY D/E (can't service debt = fatal); a D/E > 2 −1 with
+  coverage ≥ `STRONG_INTEREST_COVERAGE` (6) keeps its Risk points but is
+  WAIVED from disqualification (`serviceableLeverage` flag — the DELL case);
+  coverage missing or middling (2–6) stays disqualifying (conservative).
+  Cause attribution for the disqualification banner comes from
+  `disqualificationCauses()` — the UI must not re-derive waiver logic. Adjustments: P/E compression is ASYMMETRIC for
   cyclicals (broad pattern set: semis, autos, energy, metals/mining, chemicals,
   steel, marine, airlines, construction/building, paper — a +1 is suppressed,
   a −1 from estimates rolling over still scores); for **financials** ALL

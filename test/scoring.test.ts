@@ -47,7 +47,7 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
   };
 }
 
-const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false, valueTrap: false, peakCycle: false };
+const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false, valueTrap: false, peakCycle: false, serviceableLeverage: false, softEarningsQuality: false };
 
 /** Fully-populated non-financial row (12/12 criteria have data; improvement fields neutral). */
 function fullRow(overrides: Partial<ScanRow> = {}): ScanRow {
@@ -106,6 +106,43 @@ describe('computeBreakdown', () => {
     // ratio = 4 × 20 / 100 = 0.8
     const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 4 }));
     expect(b.earningsQuality).toBe(0);
+  });
+
+  // Graduated eliminator: a binary cliff on one noisy TTM datapoint was below
+  // institutional evidence standards. Only the unambiguous cases eliminate
+  // (negative FCF, or conversion < 0.5); the 0.5–0.7 band costs Risk and caps
+  // the tier at Moderate — an unresolved quality question, not proof of fraud.
+  it('soft band (0.5–0.7): −1 risk, flagged, capped at moderate — NOT disqualified', () => {
+    // conversion = 3 × 20 / 100 = 0.6; everything else strong (strength ≥ 12)
+    const row = fullRow({ fcfYieldPercent: 3, evToEbitda: 10, marketCap: 5_000_000_000 });
+    const scored = scoreRow(row);
+    expect(scored.breakdown.earningsQuality).toBe(-1);
+    expect(scored.flags.softEarningsQuality).toBe(true);
+    expect(scored.flags.disqualified).toBe(false);
+    expect(scored.tier).toBe('moderate'); // capped, not weak, not strong
+  });
+
+  it('critical band (< 0.5) still disqualifies', () => {
+    // conversion = 2 × 20 / 100 = 0.4
+    const row = fullRow({ fcfYieldPercent: 2 });
+    const scored = scoreRow(row);
+    expect(scored.flags.softEarningsQuality).toBe(false);
+    expect(scored.flags.disqualified).toBe(true);
+    expect(scored.tier).toBe('weak');
+  });
+
+  it('negative FCF still disqualifies (cash burn is unambiguous)', () => {
+    const row = fullRow({ fcfYieldPercent: -3 });
+    expect(scoreRow(row).flags.disqualified).toBe(true);
+  });
+
+  it('benign growth waiver suppresses the soft cap too', () => {
+    // conversion 0.6 but FCF ≥ 2 and revenue surging → benign, no cap, no dq
+    const row = fullRow({ fcfYieldPercent: 3, revenueGrowthTTM: 150, revenueGrowthQuarterly: 150 });
+    const scored = scoreRow(row);
+    expect(scored.flags.benignEarningsQuality).toBe(true);
+    expect(scored.flags.softEarningsQuality).toBe(false);
+    expect(scored.flags.disqualified).toBe(false);
   });
 
   // --- #2 Leverage (×3) ---
@@ -169,6 +206,39 @@ describe('computeBreakdown', () => {
     expect(b.leverage).toBe(0);
   });
 
+  // Coverage-first: interest coverage (serviceability) arbitrates EVERY
+  // leverage read, not just distorted ratios. D/E is the profession's least
+  // reliable leverage metric; coverage answers the actual survival question.
+  it('−1 when coverage is weak even at LOW D/E (cannot service the debt it has)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 0.8, interestCoverage: 1.5 }));
+    expect(b.leverage).toBe(-1);
+  });
+
+  it('D/E > 2 with STRONG coverage keeps −1 risk but is waived from disqualification (DELL case)', () => {
+    const row = blankRow({ debtToEquity: 2.5, interestCoverage: 12 });
+    const scored = scoreRow(row);
+    expect(scored.breakdown.leverage).toBe(-1);          // still costs Risk
+    expect(scored.flags.serviceableLeverage).toBe(true); // but waived
+    expect(scored.flags.disqualified).toBe(false);
+  });
+
+  it('D/E > 2 with middling coverage (2–6) still disqualifies (stretched borrower)', () => {
+    const row = blankRow({ debtToEquity: 2.5, interestCoverage: 3 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  it('D/E > 2 with NO coverage data still disqualifies (cannot verify serviceability)', () => {
+    const row = blankRow({ debtToEquity: 3.0 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  it('a DELL-shaped row (levered but serviceable, otherwise strong) can reach its earned tier', () => {
+    const scored = scoreRow(fullRow({ debtToEquity: 2.4, interestCoverage: 11, marketCap: 5_000_000_000 }));
+    expect(scored.flags.disqualified).toBe(false);
+    expect(scored.riskScore).toBeGreaterThanOrEqual(3); // leverage risk stays visible
+    expect(scored.tier).not.toBe('weak');
+  });
+
   // --- #3 Revenue Growth (×2) ---
   it('+1 when revenue growth > 10%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: 15 }));
@@ -219,7 +289,7 @@ describe('computeBreakdown', () => {
   });
 
   it('suspect growth never grants the benign-EQ waiver', () => {
-    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 350 });
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 2, revenueGrowthTTM: 350 });
     expect(isBenignEarningsQuality(row)).toBe(false);
     expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
   });
@@ -538,11 +608,18 @@ describe('computeScores (split strength / risk)', () => {
 });
 
 describe('isDisqualified (hard floor rule)', () => {
-  it('disqualified when Earnings Quality is −1', () => {
-    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3 });
+  it('disqualified when Earnings Quality is critically −1 (conversion < 0.5)', () => {
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 2 }); // conversion 0.4
     const b = computeBreakdown(row);
     expect(b.earningsQuality).toBe(-1);
     expect(isDisqualified(b, row)).toBe(true);
+  });
+
+  it('NOT disqualified in the soft EQ band (conversion 0.5–0.7) — capped instead', () => {
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3 }); // conversion 0.6
+    const b = computeBreakdown(row);
+    expect(b.earningsQuality).toBe(-1);
+    expect(isDisqualified(b, row)).toBe(false);
   });
 
   it('disqualified when Leverage is −1', () => {
@@ -578,14 +655,14 @@ describe('benign Earnings Quality carve-out', () => {
   });
 
   it('waives the EQ disqualifier when benign, but keeps it otherwise', () => {
-    // EQ = −1 (FCF 3% vs EY 5%), but FCF≥2 and revenue +150% → benign → not disqualified
+    // EQ = −1 (conversion 0.6), but FCF≥2 and revenue +150% → benign → not disqualified
     const benign = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 150 });
     const bb = computeBreakdown(benign);
     expect(bb.earningsQuality).toBe(-1);
     expect(isDisqualified(bb, benign)).toBe(false);
 
-    // Same weak EQ but ordinary growth → still disqualified
-    const harsh = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 5 });
+    // Critical conversion (0.4) with ordinary growth → still disqualified
+    const harsh = blankRow({ trailingPE: 20, fcfYieldPercent: 2, revenueGrowthTTM: 5 });
     expect(isDisqualified(computeBreakdown(harsh), harsh)).toBe(true);
   });
 
@@ -810,6 +887,14 @@ describe('tierFor (neutral signal tiers)', () => {
   it('a peak-cycle flag caps an otherwise-strong stock at moderate', () => {
     expect(tierFor(14, 2, { ...NO_FLAGS, peakCycle: true })).toBe('moderate');
   });
+
+  it('a soft-EQ flag caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(14, 3, { ...NO_FLAGS, softEarningsQuality: true })).toBe('moderate');
+  });
+
+  it('serviceable leverage does NOT cap — risk points only', () => {
+    expect(tierFor(14, 3, { ...NO_FLAGS, serviceableLeverage: true })).toBe('strong');
+  });
 });
 
 describe('scoreRow', () => {
@@ -842,11 +927,11 @@ describe('scoreRow', () => {
     expect(result.flags.disqualified).toBe(false);
   });
 
-  it('forces weak when Earnings Quality fails despite strong fundamentals', () => {
+  it('forces weak when Earnings Quality fails critically despite strong fundamentals', () => {
     const row = blankRow({
       trailingPE: 20,
       forwardPE: 12,
-      fcfYieldPercent: 3,   // EQ: 3 − 5 = −2 → −1 → disqualified
+      fcfYieldPercent: 2,   // conversion 0.4 < 0.5 → critical → disqualified
       revenueGrowthTTM: 15,
       debtToEquity: 0.5,
       evToEbitda: 10,

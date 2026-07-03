@@ -109,6 +109,17 @@ export interface RowFlags {
    * rolling over — the top-of-cycle signature. Caps the tier at moderate.
    */
   peakCycle: boolean;
+  /**
+   * Leverage scored −1 (D/E > 2) but interest coverage is strong — the debt is
+   * comfortably serviced, so the −1 costs Risk without disqualifying.
+   */
+  serviceableLeverage: boolean;
+  /**
+   * Earnings Quality scored −1 in the soft band (conversion 0.5–0.7, FCF
+   * positive, not a benign growth drag). Costs Risk and caps the tier at
+   * moderate — an unresolved quality question, not an elimination.
+   */
+  softEarningsQuality: boolean;
 }
 
 /** How much of the scorecard actually had data behind it. */
@@ -155,8 +166,17 @@ export const MEGA_CAP_THRESHOLD = 200_000_000_000;
  * −1 directly.
  */
 export const EXTREME_DE_RATIO = 10;
-/** Interest coverage below this marks a distorted-D/E balance sheet as fatal. */
+/** Interest coverage below this is fatal — the company cannot service its debt. */
 export const WEAK_INTEREST_COVERAGE = 2;
+/**
+ * Interest coverage at/above this waives a D/E-driven leverage −1 from the
+ * hard-floor disqualifier (it still costs Risk). D/E is the profession's least
+ * reliable leverage metric — book equity is an accounting residual — while
+ * coverage answers the actual survival question: can the company service what
+ * it owes? A levered-by-choice cash generator (DELL-style) keeps its risk
+ * points but is not eliminated.
+ */
+export const STRONG_INTEREST_COVERAGE = 6;
 
 /**
  * Sanity bounds on provider revenue growth. Values beyond these are treated as
@@ -199,6 +219,16 @@ export function sanitizeQuarterlyRevGrowth(row: ScanRow): { value: number | null
  */
 export const EQ_CONVERSION_STRONG = 1.0; // FCF/NI above this → +1
 export const EQ_CONVERSION_WEAK = 0.7;   // FCF/NI below this → −1
+/**
+ * Below this conversion the Earnings Quality −1 is a hard disqualifier; in the
+ * soft band [EQ_CONVERSION_CRITICAL, EQ_CONVERSION_WEAK) it costs Risk and caps
+ * the tier at Moderate instead. A binary cliff on one noisy TTM datapoint was
+ * below institutional evidence standards — a 30–50% conversion shortfall is an
+ * unresolved quality question (working-capital swing? capex cycle?), not proof
+ * of fabricated earnings; negative FCF and sub-0.5 conversion remain
+ * unambiguous eliminations.
+ */
+export const EQ_CONVERSION_CRITICAL = 0.5;
 
 /**
  * A −1 Earnings Quality is treated as a benign growth/capex drag — not a cash-
@@ -340,17 +370,20 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
     }
   }
 
-  // #2 — Leverage: D/E < 1.0 → +1, > 2.0 → −1.
-  // Financials and REITs: neutralized (leverage is structural). Distorted
-  // ratios (negative or > EXTREME_DE_RATIO): interest coverage arbitrates —
-  // weak coverage means the debt is a live threat (−1); otherwise neutral.
+  // #2 — Leverage, coverage-first: weak interest coverage (< 2) is −1 at ANY
+  // D/E — a company that can't service its debt is dangerous regardless of the
+  // ratio's shape. Otherwise D/E scores in the normal band (< 1.0 → +1,
+  // > 2.0 → −1); distorted ratios (negative or > EXTREME_DE_RATIO) with
+  // adequate/unknown coverage stay neutral. Financials and REITs: neutralized
+  // (leverage is structural). Whether a −1 also DISQUALIFIES is decided in
+  // isDisqualified (strong coverage waives it).
   let leverage: -1 | 0 | 1 = 0;
   if (de != null && !financial && !isReitIndustry(row.industry)) {
-    if (de >= 0 && de <= EXTREME_DE_RATIO) {
+    const ic = n(row.interestCoverage);
+    if (ic != null && ic < WEAK_INTEREST_COVERAGE) {
+      leverage = -1;
+    } else if (de >= 0 && de <= EXTREME_DE_RATIO) {
       leverage = de < 1.0 ? 1 : de > 2.0 ? -1 : 0;
-    } else {
-      const ic = n(row.interestCoverage);
-      if (ic != null && ic < WEAK_INTEREST_COVERAGE) leverage = -1;
     }
   }
 
@@ -586,14 +619,54 @@ export function isBenignEarningsQuality(row: ScanRow): boolean {
 }
 
 /**
+ * True when the Earnings Quality −1 is in the unambiguous elimination zone:
+ * negative FCF (cash burn) or conversion below EQ_CONVERSION_CRITICAL. The
+ * soft band above it costs Risk and caps the tier instead of eliminating.
+ */
+export function isCriticalEarningsQuality(row: ScanRow): boolean {
+  const fcf = n(row.fcfYieldPercent);
+  const pe = n(row.trailingPE);
+  if (fcf == null) return false;
+  if (fcf < 0) return true;
+  if (pe != null && pe > 0) return (fcf * pe) / 100 < EQ_CONVERSION_CRITICAL;
+  return false;
+}
+
+/**
+ * True when a leverage −1 is serviceable: interest coverage is strong enough
+ * (≥ STRONG_INTEREST_COVERAGE) that the debt, while large, is comfortably
+ * carried. The −1 still costs Risk but is waived from the hard floor.
+ */
+export function isServiceableLeverage(row: ScanRow): boolean {
+  const ic = n(row.interestCoverage);
+  return ic != null && ic >= STRONG_INTEREST_COVERAGE;
+}
+
+/**
+ * Which Tier 1 criterion is driving a disqualification (both may fire). The
+ * single source of truth for cause attribution — the UI banner reads this
+ * rather than re-deriving the waiver logic.
+ */
+export function disqualificationCauses(breakdown: ScoreBreakdown, row: ScanRow): { earningsQuality: boolean; leverage: boolean } {
+  return {
+    earningsQuality:
+      breakdown.earningsQuality === -1
+      && isCriticalEarningsQuality(row)
+      && !isBenignEarningsQuality(row),
+    leverage: breakdown.leverage === -1 && !isServiceableLeverage(row),
+  };
+}
+
+/**
  * True when a Tier 1 criterion (Earnings Quality or Leverage) scores −1 and is
  * not waived. This is a hard disqualifier — the stock cannot be "strong" or
- * "moderate". A −1 Earnings Quality is waived when it's a benign growth drag
- * (see isBenignEarningsQuality); Leverage −1 is never waived here.
+ * "moderate". Waivers: a benign growth-drag EQ (isBenignEarningsQuality), a
+ * soft-band EQ (capped at Moderate instead — see isCriticalEarningsQuality),
+ * and serviceable leverage (isServiceableLeverage).
  */
 export function isDisqualified(breakdown: ScoreBreakdown, row: ScanRow): boolean {
-  const eqDisqualifies = breakdown.earningsQuality === -1 && !isBenignEarningsQuality(row);
-  return eqDisqualifies || breakdown.leverage === -1;
+  const causes = disqualificationCauses(breakdown, row);
+  return causes.earningsQuality || causes.leverage;
 }
 
 /** Mega-cap trading in the top 10% of its 52-week range. */
@@ -610,7 +683,7 @@ export function isCrowded(row: ScanRow): boolean {
  */
 export function tierFor(strengthScore: number, riskScore: number, flags: RowFlags): SignalTier {
   if (flags.disqualified || flags.insufficientData || riskScore >= RISK_FLOOR) return 'weak';
-  const capped = flags.crowding || flags.valueTrap || flags.peakCycle;
+  const capped = flags.crowding || flags.valueTrap || flags.peakCycle || flags.softEarningsQuality;
   if (strengthScore >= 12) return capped ? 'moderate' : 'strong';
   if (strengthScore >= 7) return 'moderate';
   return 'weak';
@@ -629,6 +702,11 @@ export function scoreRow(row: ScanRow): ScoredRow {
     insufficientData: hasInsufficientData(row, coverage),
     valueTrap: isValueTrap(row),
     peakCycle: isPeakCycle(row),
+    serviceableLeverage: breakdown.leverage === -1 && isServiceableLeverage(row),
+    softEarningsQuality:
+      breakdown.earningsQuality === -1
+      && !isCriticalEarningsQuality(row)
+      && !isBenignEarningsQuality(row),
   };
   return {
     row,
@@ -687,15 +765,20 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
       if (de == null) return 'no data';
       if (isFinancialIndustry(row.industry)) return `D/E ${formatRatio(de)} · financial — neutralized`;
       if (isReitIndustry(row.industry)) return `D/E ${formatRatio(de)} · REIT — neutralized`;
+      const ic = n(row.interestCoverage);
+      if (ic != null && ic < WEAK_INTEREST_COVERAGE) {
+        return `D/E ${formatRatio(de)} · int. coverage ${formatRatio(ic)} — cannot service debt`;
+      }
       if (de < 0 || de > EXTREME_DE_RATIO) {
         const base = de < 0 ? 'neg. equity' : 'buyback-distorted';
-        const ic = n(row.interestCoverage);
-        if (ic == null) return `D/E ${formatRatio(de)} · ${base} — neutralized (no coverage data)`;
-        return ic < WEAK_INTEREST_COVERAGE
-          ? `D/E ${formatRatio(de)} · distorted + int. coverage ${formatRatio(ic)} — debt is a live threat`
+        return ic == null
+          ? `D/E ${formatRatio(de)} · ${base} — neutralized (no coverage data)`
           : `D/E ${formatRatio(de)} · ${base} — neutralized (int. coverage ${formatRatio(ic)})`;
       }
-      return `D/E ${formatRatio(de)}`;
+      if (de > 2.0 && ic != null && ic >= STRONG_INTEREST_COVERAGE) {
+        return `D/E ${formatRatio(de)} · int. coverage ${formatRatio(ic)} — serviceable (risk, not disqualifying)`;
+      }
+      return ic != null ? `D/E ${formatRatio(de)} · int. coverage ${formatRatio(ic)}` : `D/E ${formatRatio(de)}`;
     }
     case 'revenueGrowth': {
       if (rev == null) return 'no data';
@@ -751,8 +834,8 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
  * lockstep with the logic in computeBreakdown.
  */
 export const CRITERION_BENCHMARK: Record<keyof ScoreBreakdown, { positive: string; negative: string }> = {
-  earningsQuality: { positive: 'FCF/NI conversion > 1.0', negative: 'FCF/NI < 0.7, or FCF < 0 (neutral: financials)' },
-  leverage: { positive: 'D/E < 1.0', negative: 'D/E 2.0–10, or distorted D/E with int. coverage < 2 (neutral: financials, REITs)' },
+  earningsQuality: { positive: 'FCF/NI conversion > 1.0', negative: 'FCF/NI < 0.7 (disqualifies < 0.5 or FCF < 0; 0.5–0.7 caps at Moderate) (neutral: financials)' },
+  leverage: { positive: 'D/E < 1.0', negative: 'Int. coverage < 2 (any D/E), or D/E 2.0–10 (waived from disqualifying when coverage ≥ 6) (neutral: financials, REITs)' },
   revenueGrowth: { positive: '> 10% YoY', negative: '< 0% (declining); implausible values neutralized' },
   revenueAcceleration: { positive: 'Quarterly YoY > TTM YoY + 3pp', negative: 'Quarterly YoY < TTM YoY − 3pp' },
   fcfYieldLevel: { positive: '> 5%', negative: '< 2% (neutral: financials)' },

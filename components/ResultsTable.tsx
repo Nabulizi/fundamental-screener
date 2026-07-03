@@ -10,7 +10,7 @@ import {
   scoreRow, criterionEvidence,
   type ScoredRow, type SignalTier,
   CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
-  MAX_STRENGTH, MAX_RISK, RISK_FLOOR,
+  MAX_STRENGTH, MAX_RISK, RISK_FLOOR, disqualificationCauses,
 } from '@/lib/scoring';
 
 const FRESHNESS_TITLE: Record<Freshness, string> = {
@@ -227,8 +227,9 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
             const isExpanded = expanded.has(row.ticker);
             // A benign Earnings-Quality −1 (growth drag) is waived, so it doesn't
             // count toward the disqualification reasons shown below.
-            const eqDisqualifies = !!scored && scored.breakdown.earningsQuality === -1 && !scored.flags.benignEarningsQuality;
-            const levDisqualifies = !!scored && scored.breakdown.leverage === -1;
+            const causes = scored ? disqualificationCauses(scored.breakdown, row) : null;
+            const eqDisqualifies = !!causes?.earningsQuality;
+            const levDisqualifies = !!causes?.leverage;
             return (
               <>
               <tr key={row.ticker} className={`row-${tier}`}>
@@ -314,6 +315,12 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       )}
                       {scored.flags.peakCycle && (
                         <span className="bd-flag" title="Cyclical that looks cheap on trailing numbers while forward estimates roll over — the classic top-of-cycle signature. Capped at Moderate.">▽ Possible cycle peak (trailing cheap, estimates falling)</span>
+                      )}
+                      {scored.flags.serviceableLeverage && (
+                        <span className="bd-flag" title="D/E is above 2, but interest coverage is strong (≥6×) — the debt is comfortably serviced. Costs Risk points but does not disqualify.">✓ Leverage is serviceable (risk, not disqualifying)</span>
+                      )}
+                      {scored.flags.softEarningsQuality && (
+                        <span className="bd-flag" title="FCF/NI conversion is in the 0.5–0.7 band — earnings quality is questionable but not unambiguously broken (could be a working-capital swing or capex cycle). Costs Risk and caps the tier at Moderate.">▽ Soft earnings quality (capped at Moderate)</span>
                       )}
                       {scored.flags.cyclical && (
                         <span className="bd-flag" title="Cyclical industry — a low forward P/E here often reflects peak earnings, so P/E compression is neutralized.">↻ Cyclical (compression neutralized)</span>
