@@ -109,7 +109,17 @@ conversions are isolated in `normalizeFinnhub()` (`lib/finnhub.ts`).
 | `week52High`           | `/stock/metric`     | `metric.52WeekHigh`            |                                          |
 | `week52Low`            | `/stock/metric`     | `metric.52WeekLow`            |                                          |
 | `trailingPE`           | `/stock/metric`     | `metric.peTTM`                 | Non-positive → `null` (no meaningful PE).|
+| `forwardPE`            | `/stock/metric`     | `metric.forwardPE`             | Non-positive → `null`.                   |
 | `dividendYieldPercent` | `/stock/metric`     | `metric.dividendYieldIndicatedAnnual` | **Already a percentage** (3.05 = 3.05%). |
+| `ytdReturn`            | `/stock/metric`     | `metric.yearToDatePriceReturnDaily` | Percentage.                         |
+| `fcfYieldPercent`      | `/stock/metric`     | `metric.pfcfShareTTM`          | Derived: `100 / P/FCF`; non-positive P/FCF → `null`. |
+| `revenueGrowthTTM`     | `/stock/metric`     | `metric.revenueGrowthTTMYoy`   | Percentage. Implausible values are neutralized by scoring. |
+| `revenueGrowthQuarterly` | `/stock/metric`   | `metric.revenueGrowthQuarterlyYoy` | Percentage; acceleration criterion input. |
+| `debtToEquity`         | `/stock/metric`     | `metric.totalDebt/totalEquityQuarterly` | **Ratio** (not percent). Negative (negative book equity) passes through; scoring arbitrates. |
+| `interestCoverage`     | `/stock/metric`     | `metric.netInterestCoverageTTM` | Ratio; arbitrates distorted D/E in scoring. |
+| `evToEbitda`           | `/stock/metric`     | `metric.evEbitdaTTM`           | Non-positive → `null`.                   |
+| `operatingMarginTTM`   | `/stock/metric`     | `metric.operatingMarginTTM`    | Percentage; margin-inflection input.     |
+| `operatingMargin5Y`    | `/stock/metric`     | `metric.operatingMargin5Y`     | Percentage; margin-inflection baseline.  |
 | `currentPrice`         | `/quote`            | `c`                            | Trading currency; non-positive → `null`. Best-effort. |
 
 `rangePosition` is derived: `(currentPrice − 52WeekLow) / (52WeekHigh − 52WeekLow)`,
@@ -135,6 +145,15 @@ stored raw (null when price/range missing or `high ≤ low`) and clamped to 0–
   instance has its own cache, so hits are not guaranteed across requests.
 - **Rate limits:** on HTTP 429 the app retries **once**, honoring `Retry-After`
   (seconds or HTTP-date), capped with small jitter to avoid retry storms.
+
+## Scan history (snapshots)
+
+Every scan appends the **first fresh result per ticker per day** to a local
+`data/snapshots.jsonl` (git-ignored): the raw provider row, the computed
+score, and version stamps (`scoringVersion`, schema `v`). This builds the
+longitudinal record needed to eventually validate scoring thresholds against
+forward returns. `npm run snapshots` prints a summary. Set
+`SNAPSHOTS_DISABLED=1` to turn recording off.
 
 ## Known provider limitations
 

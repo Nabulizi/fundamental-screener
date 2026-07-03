@@ -13,10 +13,12 @@ import {
   isCrowded,
   isCyclicalIndustry,
   isFinancialIndustry,
+  computeCoverage,
   CRITERION_WEIGHT,
   CRITERION_BENCHMARK,
   CRITERION_KEYS,
   MEGA_CAP_THRESHOLD,
+  SCORING_VERSION,
   type ScoreBreakdown,
   type RowFlags,
 } from '@/lib/scoring';
@@ -46,7 +48,17 @@ function blankRow(overrides: Partial<ScanRow> = {}): ScanRow {
   };
 }
 
-const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false };
+const NO_FLAGS: RowFlags = { disqualified: false, cyclical: false, crowding: false, benignEarningsQuality: false, suspectRevenueGrowth: false, insufficientData: false, valueTrap: false, peakCycle: false, serviceableLeverage: false, softEarningsQuality: false };
+
+/** Fully-populated non-financial row (12/12 criteria have data; improvement fields neutral). */
+function fullRow(overrides: Partial<ScanRow> = {}): ScanRow {
+  return blankRow({
+    trailingPE: 20, forwardPE: 15, fcfYieldPercent: 8, revenueGrowthTTM: 15,
+    revenueGrowthQuarterly: 15, operatingMarginTTM: 20, operatingMargin5Y: 20,
+    debtToEquity: 0.5, evToEbitda: 10, dividendYieldPercent: 3,
+    rangePosition: 0.3, ytdReturn: 10, ...overrides,
+  });
+}
 
 describe('computeBreakdown', () => {
   it('returns all zeros for a blank row', () => {
@@ -69,6 +81,69 @@ describe('computeBreakdown', () => {
   it('−1 when FCF is negative (red flag)', () => {
     const b = computeBreakdown(blankRow({ fcfYieldPercent: -2 }));
     expect(b.earningsQuality).toBe(-1);
+  });
+
+  // The EQ test is a conversion RATIO (FCF/NI = fcfYield × PE / 100), so the
+  // threshold means the same thing at every valuation multiple. The old
+  // absolute-pp yield gap disqualified cheap stocks (1pp = 8% shortfall at P/E 8)
+  // while passing expensive ones (1pp = 50% shortfall at P/E 50).
+  it('passes sound deep value: FCF/NI 0.88 at P/E 8 is 0, not −1', () => {
+    const b = computeBreakdown(blankRow({ trailingPE: 8, fcfYieldPercent: 11 }));
+    expect(b.earningsQuality).toBe(0);
+  });
+
+  it('fails expensive low conversion: FCF/NI 0.55 at P/E 50 is −1', () => {
+    const b = computeBreakdown(blankRow({ trailingPE: 50, fcfYieldPercent: 1.1 }));
+    expect(b.earningsQuality).toBe(-1);
+  });
+
+  it('+1 whenever conversion exceeds 1.0, even by a small margin', () => {
+    // ratio = 5.2 × 20 / 100 = 1.04
+    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 5.2 }));
+    expect(b.earningsQuality).toBe(1);
+  });
+
+  it('0 in the 0.7–1.0 conversion band', () => {
+    // ratio = 4 × 20 / 100 = 0.8
+    const b = computeBreakdown(blankRow({ trailingPE: 20, fcfYieldPercent: 4 }));
+    expect(b.earningsQuality).toBe(0);
+  });
+
+  // Graduated eliminator: a binary cliff on one noisy TTM datapoint was below
+  // institutional evidence standards. Only the unambiguous cases eliminate
+  // (negative FCF, or conversion < 0.5); the 0.5–0.7 band costs Risk and caps
+  // the tier at Moderate — an unresolved quality question, not proof of fraud.
+  it('soft band (0.5–0.7): −1 risk, flagged, capped at moderate — NOT disqualified', () => {
+    // conversion = 3 × 20 / 100 = 0.6; everything else strong (strength ≥ 12)
+    const row = fullRow({ fcfYieldPercent: 3, evToEbitda: 10, marketCap: 5_000_000_000 });
+    const scored = scoreRow(row);
+    expect(scored.breakdown.earningsQuality).toBe(-1);
+    expect(scored.flags.softEarningsQuality).toBe(true);
+    expect(scored.flags.disqualified).toBe(false);
+    expect(scored.tier).toBe('moderate'); // capped, not weak, not strong
+  });
+
+  it('critical band (< 0.5) still disqualifies', () => {
+    // conversion = 2 × 20 / 100 = 0.4
+    const row = fullRow({ fcfYieldPercent: 2 });
+    const scored = scoreRow(row);
+    expect(scored.flags.softEarningsQuality).toBe(false);
+    expect(scored.flags.disqualified).toBe(true);
+    expect(scored.tier).toBe('weak');
+  });
+
+  it('negative FCF still disqualifies (cash burn is unambiguous)', () => {
+    const row = fullRow({ fcfYieldPercent: -3 });
+    expect(scoreRow(row).flags.disqualified).toBe(true);
+  });
+
+  it('benign growth waiver suppresses the soft cap too', () => {
+    // conversion 0.6 but FCF ≥ 2 and revenue surging → benign, no cap, no dq
+    const row = fullRow({ fcfYieldPercent: 3, revenueGrowthTTM: 150, revenueGrowthQuarterly: 150 });
+    const scored = scoreRow(row);
+    expect(scored.flags.benignEarningsQuality).toBe(true);
+    expect(scored.flags.softEarningsQuality).toBe(false);
+    expect(scored.flags.disqualified).toBe(false);
   });
 
   // --- #2 Leverage (×3) ---
@@ -103,6 +178,68 @@ describe('computeBreakdown', () => {
     expect(b.leverage).toBe(0);
   });
 
+  // When D/E is distorted (negative or > EXTREME_DE_RATIO), interest coverage
+  // arbitrates: buyback-shrunken equity with easily-serviced debt stays neutral,
+  // but loss-wiped equity that can't cover interest is fatal — the exact case
+  // the blanket waiver used to hide.
+  it('−1 when D/E is extreme AND interest coverage is weak (loss-wiped equity)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 12, interestCoverage: 1.2 }));
+    expect(b.leverage).toBe(-1);
+  });
+
+  it('disqualifies extreme D/E with weak coverage (Tier 1 elimination)', () => {
+    const row = blankRow({ debtToEquity: 12, interestCoverage: 1.2 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  it('neutral when D/E is extreme but coverage is strong (MCD-style buybacks)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 40.64, interestCoverage: 8 }));
+    expect(b.leverage).toBe(0);
+  });
+
+  it('−1 when D/E is negative AND coverage is weak', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: -4.2, interestCoverage: 1.0 }));
+    expect(b.leverage).toBe(-1);
+  });
+
+  it('neutral when D/E is distorted and coverage is unavailable (cannot arbitrate)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 12, interestCoverage: null }));
+    expect(b.leverage).toBe(0);
+  });
+
+  // Coverage-first: interest coverage (serviceability) arbitrates EVERY
+  // leverage read, not just distorted ratios. D/E is the profession's least
+  // reliable leverage metric; coverage answers the actual survival question.
+  it('−1 when coverage is weak even at LOW D/E (cannot service the debt it has)', () => {
+    const b = computeBreakdown(blankRow({ debtToEquity: 0.8, interestCoverage: 1.5 }));
+    expect(b.leverage).toBe(-1);
+  });
+
+  it('D/E > 2 with STRONG coverage keeps −1 risk but is waived from disqualification (DELL case)', () => {
+    const row = blankRow({ debtToEquity: 2.5, interestCoverage: 12 });
+    const scored = scoreRow(row);
+    expect(scored.breakdown.leverage).toBe(-1);          // still costs Risk
+    expect(scored.flags.serviceableLeverage).toBe(true); // but waived
+    expect(scored.flags.disqualified).toBe(false);
+  });
+
+  it('D/E > 2 with middling coverage (2–6) still disqualifies (stretched borrower)', () => {
+    const row = blankRow({ debtToEquity: 2.5, interestCoverage: 3 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  it('D/E > 2 with NO coverage data still disqualifies (cannot verify serviceability)', () => {
+    const row = blankRow({ debtToEquity: 3.0 });
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  it('a DELL-shaped row (levered but serviceable, otherwise strong) can reach its earned tier', () => {
+    const scored = scoreRow(fullRow({ debtToEquity: 2.4, interestCoverage: 11, marketCap: 5_000_000_000 }));
+    expect(scored.flags.disqualified).toBe(false);
+    expect(scored.riskScore).toBeGreaterThanOrEqual(3); // leverage risk stays visible
+    expect(scored.tier).not.toBe('weak');
+  });
+
   // --- #3 Revenue Growth (×2) ---
   it('+1 when revenue growth > 10%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: 15 }));
@@ -117,6 +254,99 @@ describe('computeBreakdown', () => {
   it('0 when revenue growth between 0 and 10%', () => {
     const b = computeBreakdown(blankRow({ revenueGrowthTTM: 7 }));
     expect(b.revenueGrowth).toBe(0);
+  });
+
+  // Provider growth figures are not always trustworthy — verified live: Finnhub
+  // returns revenueGrowthTTMYoy 108.98 for JPM, a clear artifact. Implausible
+  // values are neutralized and flagged instead of scored.
+  it('neutralizes implausible growth for a financial (>60%) — live JPM artifact', () => {
+    const row = blankRow({ industry: 'Banks', revenueGrowthTTM: 108.98 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(0);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(true);
+  });
+
+  it('keeps plausible financial growth scored', () => {
+    const row = blankRow({ industry: 'Banks', revenueGrowthTTM: 12 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(1);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(false);
+  });
+
+  it('neutralizes >300% growth for any industry (data artifact scale)', () => {
+    const row = blankRow({ revenueGrowthTTM: 350 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(0);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(true);
+  });
+
+  it('keeps genuine hyper-growth scored for non-financials (MU-style 150%)', () => {
+    const row = blankRow({ industry: 'Semiconductors', revenueGrowthTTM: 150 });
+    expect(computeBreakdown(row).revenueGrowth).toBe(1);
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(false);
+  });
+
+  it('flags a suspect QUARTERLY figure too (not silently swallowed)', () => {
+    const row = blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 350 });
+    expect(scoreRow(row).flags.suspectRevenueGrowth).toBe(true);
+    expect(criterionEvidence(row, 'revenueAcceleration')).toContain('implausible');
+  });
+
+  it('suspect growth never grants the benign-EQ waiver', () => {
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 2, revenueGrowthTTM: 350 });
+    expect(isBenignEarningsQuality(row)).toBe(false);
+    expect(isDisqualified(computeBreakdown(row), row)).toBe(true);
+  });
+
+  // --- Revenue Acceleration (×2): quarterly YoY vs TTM YoY ---
+  // The screener used to see only growth LEVELS, so an accelerating business
+  // scored identically to a static one and turnarounds were invisible.
+  it('+1 when quarterly growth exceeds TTM growth by 3pp+', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 18 }));
+    expect(b.revenueAcceleration).toBe(1);
+  });
+
+  it('−1 when quarterly growth trails TTM growth by 3pp+ (decelerating)', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 5 }));
+    expect(b.revenueAcceleration).toBe(-1);
+  });
+
+  it('0 inside the ±3pp band (steady growth)', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 13 }));
+    expect(b.revenueAcceleration).toBe(0);
+  });
+
+  it('detects acceleration out of a decline (turnaround signature)', () => {
+    const b = computeBreakdown(blankRow({ revenueGrowthTTM: -2, revenueGrowthQuarterly: 4 }));
+    expect(b.revenueAcceleration).toBe(1);
+  });
+
+  it('0 when either growth figure is missing', () => {
+    expect(computeBreakdown(blankRow({ revenueGrowthTTM: 12 })).revenueAcceleration).toBe(0);
+    expect(computeBreakdown(blankRow({ revenueGrowthQuarterly: 18 })).revenueAcceleration).toBe(0);
+  });
+
+  it('0 when either growth figure is implausible (same sanity bounds as level)', () => {
+    expect(computeBreakdown(blankRow({ industry: 'Banks', revenueGrowthTTM: 108.98, revenueGrowthQuarterly: 5 })).revenueAcceleration).toBe(0);
+    expect(computeBreakdown(blankRow({ revenueGrowthTTM: 12, revenueGrowthQuarterly: 350 })).revenueAcceleration).toBe(0);
+  });
+
+  // --- Margin Inflection (×2): TTM operating margin vs 5Y average ---
+  it('+1 when TTM operating margin exceeds the 5Y average by 1pp+', () => {
+    const b = computeBreakdown(blankRow({ operatingMarginTTM: 14, operatingMargin5Y: 11 }));
+    expect(b.marginInflection).toBe(1);
+  });
+
+  it('−1 when TTM operating margin trails the 5Y average by 1pp+ (compressing)', () => {
+    const b = computeBreakdown(blankRow({ operatingMarginTTM: 8, operatingMargin5Y: 11 }));
+    expect(b.marginInflection).toBe(-1);
+  });
+
+  it('0 inside the ±1pp band (stable margins)', () => {
+    const b = computeBreakdown(blankRow({ operatingMarginTTM: 11.5, operatingMargin5Y: 11 }));
+    expect(b.marginInflection).toBe(0);
+  });
+
+  it('0 when either margin is missing', () => {
+    expect(computeBreakdown(blankRow({ operatingMarginTTM: 14 })).marginInflection).toBe(0);
+    expect(computeBreakdown(blankRow({ operatingMargin5Y: 11 })).marginInflection).toBe(0);
   });
 
   // --- #4 FCF Yield Level (×2) ---
@@ -160,6 +390,13 @@ describe('computeBreakdown', () => {
   it('neutralizes compression for automobiles', () => {
     const b = computeBreakdown(blankRow({ industry: 'Automobiles', trailingPE: 370, forwardPE: 200 }));
     expect(b.peCompression).toBe(0);
+  });
+
+  it('still penalizes a cyclical whose estimates are rolling over (fwd > TTM)', () => {
+    // Asymmetric: expected cyclical EPS growth is never rewarded (+1 suppressed),
+    // but expected decline is the honest peak signal and keeps its −1.
+    const b = computeBreakdown(blankRow({ industry: 'Oil & Gas Exploration', trailingPE: 6, forwardPE: 9 }));
+    expect(b.peCompression).toBe(-1);
   });
 
   // --- #6 Valuation EV/EBITDA (×1) ---
@@ -223,12 +460,85 @@ describe('computeBreakdown', () => {
   });
 });
 
+describe('financial neutralization (FCF-derived criteria are noise for banks/insurers)', () => {
+  // P/FCF-derived FCF yield is economically meaningless for financials —
+  // verified live: Finnhub returns JPM pfcfShareTTM 5.98 (a 16.7% "FCF yield").
+  // Only D/E used to be neutralized; the FCF criteria scored the noise.
+  const bank = () => blankRow({
+    industry: 'Banks', trailingPE: 11, fcfYieldPercent: 30,
+    dividendYieldPercent: 3, evToEbitda: 9,
+  });
+
+  it('neutralizes earnings quality for financials', () => {
+    expect(computeBreakdown(bank()).earningsQuality).toBe(0);
+  });
+
+  it('neutralizes FCF yield level for financials', () => {
+    expect(computeBreakdown(bank()).fcfYieldLevel).toBe(0);
+  });
+
+  it('neutralizes dividend coverage for financials', () => {
+    expect(computeBreakdown(bank()).dividendCoverage).toBe(0);
+  });
+
+  it('neutralizes EV/EBITDA valuation for financials (not meaningful for banks)', () => {
+    expect(computeBreakdown(bank()).valuation).toBe(0);
+  });
+
+  it('does not treat negative FCF as a red flag for a financial (still noise)', () => {
+    expect(computeBreakdown(blankRow({ industry: 'Insurance', fcfYieldPercent: -5 })).earningsQuality).toBe(0);
+  });
+
+  it('still scores P/E-based and price criteria for financials', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Banks', trailingPE: 11, forwardPE: 10, dividendYieldPercent: 3, ytdReturn: 6 }));
+    expect(b.peCompression).toBe(1);
+    expect(b.dividendYield).toBe(1);
+    expect(b.ytdMomentum).toBe(1);
+  });
+});
+
+describe('REIT leverage neutralization', () => {
+  it('does not flag structurally normal REIT leverage (D/E 2.5)', () => {
+    const row = blankRow({ industry: 'Real Estate Investment Trusts', debtToEquity: 2.5 });
+    const b = computeBreakdown(row);
+    expect(b.leverage).toBe(0);
+    expect(isDisqualified(b, row)).toBe(false);
+  });
+
+  it('matches bare "REIT" industry labels', () => {
+    expect(computeBreakdown(blankRow({ industry: 'Equity REITs', debtToEquity: 2.5 })).leverage).toBe(0);
+  });
+
+  it('keeps FCF-derived criteria scored for REITs (unlike financials)', () => {
+    const b = computeBreakdown(blankRow({ industry: 'Real Estate Investment Trusts', fcfYieldPercent: 6 }));
+    expect(b.fcfYieldLevel).toBe(1);
+  });
+});
+
 describe('industry classification helpers', () => {
   it('detects cyclical industries', () => {
     expect(isCyclicalIndustry('Semiconductors')).toBe(true);
     expect(isCyclicalIndustry('Automobiles')).toBe(true);
     expect(isCyclicalIndustry('Software')).toBe(false);
     expect(isCyclicalIndustry(null)).toBe(false);
+  });
+
+  it('detects the broader commodity/deep-cyclical set', () => {
+    // The old list was semis + autos only, so an oil producer at peak earnings
+    // scored Strong 14/17 with no cyclical treatment at all.
+    for (const industry of [
+      'Oil & Gas Exploration', 'Oil, Gas & Consumable Fuels', 'Energy Equipment & Services',
+      'Metals & Mining', 'Steel', 'Chemicals', 'Marine', 'Airlines',
+      'Construction Materials', 'Building Products', 'Paper & Forest Products',
+    ]) {
+      expect(isCyclicalIndustry(industry), industry).toBe(true);
+    }
+  });
+
+  it('does not over-match defensives and financials as cyclical', () => {
+    for (const industry of ['Banks', 'Insurance', 'Beverages', 'Pharmaceuticals', 'Electric Utilities', 'Software']) {
+      expect(isCyclicalIndustry(industry), industry).toBe(false);
+    }
   });
 
   it('detects financial industries', () => {
@@ -243,15 +553,17 @@ describe('industry classification helpers', () => {
 describe('computeScores (split strength / risk)', () => {
   it('strength sums only positive weighted signals', () => {
     const breakdown: ScoreBreakdown = {
-      earningsQuality: 1,   // ×3 = +3
-      leverage: 1,           // ×3 = +3
-      revenueGrowth: 1,      // ×2 = +2
-      fcfYieldLevel: 1,      // ×2 = +2
-      peCompression: -1,     // ×2 = -2 (→ risk)
-      valuation: 1,          // ×1 = +1
+      earningsQuality: 1,     // ×3 = +3
+      leverage: 1,            // ×3 = +3
+      revenueGrowth: 1,       // ×2 = +2
+      revenueAcceleration: 0,
+      fcfYieldLevel: 1,       // ×2 = +2
+      marginInflection: 0,
+      peCompression: -1,      // ×2 = -2 (→ risk)
+      valuation: 1,           // ×1 = +1
       dividendCoverage: 0,
-      pricePosition: -1,     // ×1 = -1 (→ risk)
-      ytdMomentum: -1,       // ×1 = -1 (→ risk)
+      pricePosition: -1,      // ×1 = -1 (→ risk)
+      ytdMomentum: -1,        // ×1 = -1 (→ risk)
       dividendYield: 0,
     };
     const { strength, risk } = computeScores(breakdown);
@@ -260,23 +572,23 @@ describe('computeScores (split strength / risk)', () => {
     expect(totalScore(breakdown)).toBe(7); // strength − risk
   });
 
-  it('max strength is +17', () => {
+  it('max strength is +21', () => {
     const all: ScoreBreakdown = {
-      earningsQuality: 1, leverage: 1, revenueGrowth: 1, fcfYieldLevel: 1,
-      peCompression: 1, valuation: 1, dividendCoverage: 1, pricePosition: 1,
-      ytdMomentum: 1, dividendYield: 1,
+      earningsQuality: 1, leverage: 1, revenueGrowth: 1, revenueAcceleration: 1,
+      fcfYieldLevel: 1, marginInflection: 1, peCompression: 1, valuation: 1,
+      dividendCoverage: 1, pricePosition: 1, ytdMomentum: 1, dividendYield: 1,
     };
-    expect(computeScores(all).strength).toBe(17);
+    expect(computeScores(all).strength).toBe(21);
     expect(computeScores(all).risk).toBe(0);
   });
 
-  it('max risk is 16 (dividendYield never negative)', () => {
+  it('max risk is 20 (dividendYield never negative)', () => {
     const all: ScoreBreakdown = {
-      earningsQuality: -1, leverage: -1, revenueGrowth: -1, fcfYieldLevel: -1,
-      peCompression: -1, valuation: -1, dividendCoverage: -1, pricePosition: -1,
-      ytdMomentum: -1, dividendYield: 0,
+      earningsQuality: -1, leverage: -1, revenueGrowth: -1, revenueAcceleration: -1,
+      fcfYieldLevel: -1, marginInflection: -1, peCompression: -1, valuation: -1,
+      dividendCoverage: -1, pricePosition: -1, ytdMomentum: -1, dividendYield: 0,
     };
-    expect(computeScores(all).risk).toBe(16);
+    expect(computeScores(all).risk).toBe(20);
     expect(computeScores(all).strength).toBe(0);
   });
 
@@ -284,7 +596,9 @@ describe('computeScores (split strength / risk)', () => {
     expect(CRITERION_WEIGHT.earningsQuality).toBe(3);
     expect(CRITERION_WEIGHT.leverage).toBe(3);
     expect(CRITERION_WEIGHT.revenueGrowth).toBe(2);
+    expect(CRITERION_WEIGHT.revenueAcceleration).toBe(2);
     expect(CRITERION_WEIGHT.fcfYieldLevel).toBe(2);
+    expect(CRITERION_WEIGHT.marginInflection).toBe(2);
     expect(CRITERION_WEIGHT.peCompression).toBe(2);
     expect(CRITERION_WEIGHT.valuation).toBe(1);
     expect(CRITERION_WEIGHT.dividendCoverage).toBe(1);
@@ -295,11 +609,18 @@ describe('computeScores (split strength / risk)', () => {
 });
 
 describe('isDisqualified (hard floor rule)', () => {
-  it('disqualified when Earnings Quality is −1', () => {
-    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3 });
+  it('disqualified when Earnings Quality is critically −1 (conversion < 0.5)', () => {
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 2 }); // conversion 0.4
     const b = computeBreakdown(row);
     expect(b.earningsQuality).toBe(-1);
     expect(isDisqualified(b, row)).toBe(true);
+  });
+
+  it('NOT disqualified in the soft EQ band (conversion 0.5–0.7) — capped instead', () => {
+    const row = blankRow({ trailingPE: 20, fcfYieldPercent: 3 }); // conversion 0.6
+    const b = computeBreakdown(row);
+    expect(b.earningsQuality).toBe(-1);
+    expect(isDisqualified(b, row)).toBe(false);
   });
 
   it('disqualified when Leverage is −1', () => {
@@ -335,14 +656,14 @@ describe('benign Earnings Quality carve-out', () => {
   });
 
   it('waives the EQ disqualifier when benign, but keeps it otherwise', () => {
-    // EQ = −1 (FCF 3% vs EY 5%), but FCF≥2 and revenue +150% → benign → not disqualified
+    // EQ = −1 (conversion 0.6), but FCF≥2 and revenue +150% → benign → not disqualified
     const benign = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 150 });
     const bb = computeBreakdown(benign);
     expect(bb.earningsQuality).toBe(-1);
     expect(isDisqualified(bb, benign)).toBe(false);
 
-    // Same weak EQ but ordinary growth → still disqualified
-    const harsh = blankRow({ trailingPE: 20, fcfYieldPercent: 3, revenueGrowthTTM: 5 });
+    // Critical conversion (0.4) with ordinary growth → still disqualified
+    const harsh = blankRow({ trailingPE: 20, fcfYieldPercent: 2, revenueGrowthTTM: 5 });
     expect(isDisqualified(computeBreakdown(harsh), harsh)).toBe(true);
   });
 
@@ -365,7 +686,174 @@ describe('isCrowded (mega-cap near 52W high)', () => {
   });
 });
 
+describe('value-trap gate (cheap + shrinking cannot rank Strong)', () => {
+  // A falling price simultaneously improves FCF yield, EV/EBITDA, dividend
+  // coverage, and 52W position, while decline shows up in exactly one −2
+  // signal — so a melting ice cube with good cash conversion used to score
+  // Strength 14/17 → STRONG. Cheap + shrinking now caps the tier at Moderate.
+  const trap = () => blankRow({
+    industry: 'Media Agencies', trailingPE: 7, forwardPE: 6.5, fcfYieldPercent: 16,
+    revenueGrowthTTM: -6, debtToEquity: 0.9, interestCoverage: 7, evToEbitda: 4.5,
+    dividendYieldPercent: 6, rangePosition: 0.15, ytdReturn: -25,
+  });
+
+  it('flags the trap archetype and caps it at moderate', () => {
+    const scored = scoreRow(trap());
+    expect(scored.flags.valueTrap).toBe(true);
+    expect(scored.strengthScore).toBeGreaterThanOrEqual(12); // would be strong…
+    expect(scored.tier).toBe('moderate');                    // …but capped
+  });
+
+  it('does not flag sound deep value (revenue still growing)', () => {
+    const scored = scoreRow({ ...trap(), revenueGrowthTTM: 2 });
+    expect(scored.flags.valueTrap).toBe(false);
+    expect(scored.tier).toBe('strong'); // same cheapness, growing → uncapped
+  });
+
+  it('does not flag a declining business that is not optically cheap', () => {
+    const scored = scoreRow(blankRow({ revenueGrowthTTM: -5, evToEbitda: 12, fcfYieldPercent: 4 }));
+    expect(scored.flags.valueTrap).toBe(false);
+  });
+
+  it('never flags financials — their FCF/EV "cheapness" is the same neutralized noise', () => {
+    // A bank with P/FCF-noise FCF yield (the live JPM case) and mildly declining
+    // revenue must not be labeled a value trap off data the scorer refuses to score.
+    const scored = scoreRow(blankRow({ industry: 'Banks', fcfYieldPercent: 30, evToEbitda: 5, revenueGrowthTTM: -2 }));
+    expect(scored.flags.valueTrap).toBe(false);
+  });
+});
+
+describe('peak-cycle gate (cyclical, cheap on trailing, estimates falling)', () => {
+  // The classic cyclical trap: trailing numbers look phenomenal exactly at the
+  // top (low P/E, huge FCF yield, low EV/EBITDA, booming growth) while forward
+  // estimates are already rolling over. Used to score STRONG 14/17.
+  const peak = () => blankRow({
+    industry: 'Oil & Gas Exploration', trailingPE: 6, forwardPE: 9, fcfYieldPercent: 18,
+    revenueGrowthTTM: 30, debtToEquity: 0.4, interestCoverage: 20, evToEbitda: 3.5,
+    dividendYieldPercent: 3, rangePosition: 0.85, ytdReturn: 20,
+  });
+
+  it('flags the peak archetype and caps it at moderate', () => {
+    const scored = scoreRow(peak());
+    expect(scored.flags.peakCycle).toBe(true);
+    expect(scored.tier).not.toBe('strong');
+  });
+
+  it('does not flag a cyclical whose estimates still point up', () => {
+    const scored = scoreRow({ ...peak(), forwardPE: 5 });
+    expect(scored.flags.peakCycle).toBe(false);
+  });
+
+  it('does not flag an expensive cyclical (nothing optically cheap to trap on)', () => {
+    const scored = scoreRow(blankRow({ industry: 'Semiconductors', trailingPE: 30, forwardPE: 35, evToEbitda: 20, fcfYieldPercent: 3 }));
+    expect(scored.flags.peakCycle).toBe(false);
+  });
+
+  it('does not flag non-cyclicals', () => {
+    const scored = scoreRow(blankRow({ industry: 'Software', trailingPE: 6, forwardPE: 9, evToEbitda: 4, fcfYieldPercent: 18 }));
+    expect(scored.flags.peakCycle).toBe(false);
+  });
+});
+
+describe('improvement detection (turnaround / pre-recognition)', () => {
+  it('lifts a turnaround with accelerating revenue and inflecting margins to moderate', () => {
+    // Losses ending (no trailing P/E), estimates positive, growth turning up,
+    // margins above the 5Y average — used to score Weak 3/17, invisible.
+    const scored = scoreRow(blankRow({
+      trailingPE: null, forwardPE: 15, fcfYieldPercent: 2.5, revenueGrowthTTM: -2,
+      revenueGrowthQuarterly: 4, operatingMarginTTM: 6, operatingMargin5Y: 3,
+      debtToEquity: 1.5, interestCoverage: 4, evToEbitda: 12, dividendYieldPercent: 0,
+      rangePosition: 0.35, ytdReturn: 15,
+    }));
+    expect(scored.breakdown.revenueAcceleration).toBe(1);
+    expect(scored.breakdown.marginInflection).toBe(1);
+    expect(scored.tier).toBe('moderate');
+  });
+
+  it('ranks an inflecting business above its static twin', () => {
+    const base = {
+      trailingPE: 21, forwardPE: 17, fcfYieldPercent: 4.5, revenueGrowthTTM: 12,
+      debtToEquity: 0.7, interestCoverage: 12, evToEbitda: 13, dividendYieldPercent: 0.5,
+      rangePosition: 0.45, ytdReturn: 3,
+    };
+    const staticTwin = scoreRow(blankRow({ ...base, revenueGrowthQuarterly: 12, operatingMarginTTM: 11, operatingMargin5Y: 11 }));
+    const inflecting = scoreRow(blankRow({ ...base, revenueGrowthQuarterly: 18, operatingMarginTTM: 14, operatingMargin5Y: 11 }));
+    expect(inflecting.strengthScore).toBe(staticTwin.strengthScore + 4);
+  });
+});
+
+describe('computeCoverage + minimum-data floor', () => {
+  // A null input can never score −1, so sparse rows used to look SAFER than
+  // covered ones (an Alpha Vantage failover row cannot be disqualified at all).
+  // Coverage measures how much of the scorecard actually had data; below the
+  // floor a row cannot tier above weak, and the flag says why.
+  it('counts 12/12 for a fully-populated non-financial row', () => {
+    const c = computeCoverage(fullRow());
+    expect(c.covered).toBe(12);
+    expect(c.applicable).toBe(12);
+    expect(c.fraction).toBe(1);
+  });
+
+  it('keeps peCompression applicable for cyclicals (asymmetric: −1 still scores)', () => {
+    const c = computeCoverage(fullRow({ industry: 'Semiconductors' }));
+    expect(c.applicable).toBe(12);
+    expect(c.covered).toBe(12);
+  });
+
+  it('excludes the five neutralized criteria for financials', () => {
+    // EQ, leverage, FCF level, dividend coverage, valuation are all neutralized.
+    const c = computeCoverage(fullRow({ industry: 'Banks' }));
+    expect(c.applicable).toBe(7);
+    expect(c.covered).toBe(7);
+  });
+
+  it('counts suspect revenue growth as uncovered (level AND acceleration)', () => {
+    const c = computeCoverage(fullRow({ revenueGrowthTTM: 350 }));
+    expect(c.covered).toBe(10); // revenueGrowth + revenueAcceleration both uncovered
+  });
+
+  it('flags an AV-failover-shaped row as insufficient and floors it to weak', () => {
+    // Alpha Vantage supplies no fcf/rev/de/ev/ytd — 3/10 coverage.
+    const row = blankRow({ trailingPE: 14, forwardPE: 12, dividendYieldPercent: 2.5, rangePosition: 0.5 });
+    const scored = scoreRow(row);
+    expect(scored.coverage.fraction).toBeLessThan(0.7);
+    expect(scored.flags.insufficientData).toBe(true);
+    expect(scored.tier).toBe('weak');
+  });
+
+  it('missing D/E alone makes a non-financial insufficient (leverage unverifiable)', () => {
+    const scored = scoreRow(fullRow({ debtToEquity: null }));
+    expect(scored.coverage.fraction).toBeGreaterThanOrEqual(0.7);
+    expect(scored.flags.insufficientData).toBe(true);
+    expect(scored.tier).toBe('weak');
+  });
+
+  it('missing FCF alone makes a non-financial insufficient (cash conversion unverifiable)', () => {
+    const scored = scoreRow(fullRow({ fcfYieldPercent: null }));
+    expect(scored.flags.insufficientData).toBe(true);
+  });
+
+  it('does not require D/E or FCF for financials (not applicable to them)', () => {
+    const row = blankRow({
+      industry: 'Banks', trailingPE: 11, forwardPE: 10, revenueGrowthTTM: 12,
+      dividendYieldPercent: 3, rangePosition: 0.5, ytdReturn: 6,
+    });
+    const scored = scoreRow(row);
+    expect(scored.flags.insufficientData).toBe(false);
+  });
+
+  it('a fully-covered strong row keeps its tier', () => {
+    const scored = scoreRow(fullRow({ marketCap: 5_000_000_000 }));
+    expect(scored.flags.insufficientData).toBe(false);
+    expect(scored.tier).toBe('strong');
+  });
+});
+
 describe('tierFor (neutral signal tiers)', () => {
+  it('weak when data coverage is insufficient, regardless of strength', () => {
+    expect(tierFor(15, 0, { ...NO_FLAGS, insufficientData: true })).toBe('weak');
+  });
+
   it('strong for strength >= 12 with low risk and no flags', () => {
     expect(tierFor(12, 0, NO_FLAGS)).toBe('strong');
     expect(tierFor(17, 2, NO_FLAGS)).toBe('strong');
@@ -391,6 +879,22 @@ describe('tierFor (neutral signal tiers)', () => {
 
   it('crowding caps an otherwise-strong stock at moderate', () => {
     expect(tierFor(15, 2, { ...NO_FLAGS, crowding: true })).toBe('moderate');
+  });
+
+  it('a value-trap flag caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(14, 3, { ...NO_FLAGS, valueTrap: true })).toBe('moderate');
+  });
+
+  it('a peak-cycle flag caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(14, 2, { ...NO_FLAGS, peakCycle: true })).toBe('moderate');
+  });
+
+  it('a soft-EQ flag caps an otherwise-strong stock at moderate', () => {
+    expect(tierFor(14, 3, { ...NO_FLAGS, softEarningsQuality: true })).toBe('moderate');
+  });
+
+  it('serviceable leverage does NOT cap — risk points only', () => {
+    expect(tierFor(14, 3, { ...NO_FLAGS, serviceableLeverage: true })).toBe('strong');
   });
 });
 
@@ -424,11 +928,11 @@ describe('scoreRow', () => {
     expect(result.flags.disqualified).toBe(false);
   });
 
-  it('forces weak when Earnings Quality fails despite strong fundamentals', () => {
+  it('forces weak when Earnings Quality fails critically despite strong fundamentals', () => {
     const row = blankRow({
       trailingPE: 20,
       forwardPE: 12,
-      fcfYieldPercent: 3,   // EQ: 3 − 5 = −2 → −1 → disqualified
+      fcfYieldPercent: 2,   // conversion 0.4 < 0.5 → critical → disqualified
       revenueGrowthTTM: 15,
       debtToEquity: 0.5,
       evToEbitda: 10,
@@ -521,9 +1025,9 @@ describe('scoreRow', () => {
 });
 
 describe('criterionEvidence', () => {
-  it('shows FCF vs Earnings Yield for earnings quality', () => {
+  it('shows the FCF/NI conversion ratio for earnings quality', () => {
     expect(criterionEvidence(blankRow({ trailingPE: 20, fcfYieldPercent: 7 }), 'earningsQuality'))
-      .toBe('FCF 7.00% vs EY 5.00%');
+      .toBe('FCF/NI 1.40 (FCF 7.00% vs EY 5.00%)');
   });
 
   it('shows the D/E ratio for leverage', () => {
@@ -589,14 +1093,23 @@ describe('breakdownTooltip', () => {
     const breakdown = computeBreakdown(blankRow({ trailingPE: 20, forwardPE: 15 }));
     const tip = breakdownTooltip(breakdown);
     expect(tip).toContain('P/E Compression (×2): +2');
-    expect(tip.split('\n').length).toBe(10);
+    expect(tip.split('\n').length).toBe(12);
   });
 
-  it('shows all 10 criteria in significance order', () => {
+  it('shows all 12 criteria in significance order', () => {
     const breakdown = computeBreakdown(blankRow());
     const lines = breakdownTooltip(breakdown).split('\n');
     expect(lines[0]).toContain('Earnings Quality');
     expect(lines[1]).toContain('Leverage');
-    expect(lines[9]).toContain('Dividend Yield');
+    expect(lines[3]).toContain('Revenue Acceleration');
+    expect(lines[5]).toContain('Margin Inflection');
+    expect(lines[11]).toContain('Dividend Yield');
+  });
+});
+
+describe('SCORING_VERSION', () => {
+  it('is a positive integer (stamped into scan snapshots)', () => {
+    expect(Number.isInteger(SCORING_VERSION)).toBe(true);
+    expect(SCORING_VERSION).toBeGreaterThanOrEqual(3);
   });
 });

@@ -10,6 +10,7 @@ import {
   scoreRow, criterionEvidence,
   type ScoredRow, type SignalTier,
   CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT,
+  MAX_STRENGTH, MAX_RISK, RISK_FLOOR, disqualificationCauses,
 } from '@/lib/scoring';
 
 const FRESHNESS_TITLE: Record<Freshness, string> = {
@@ -226,8 +227,9 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
             const isExpanded = expanded.has(row.ticker);
             // A benign Earnings-Quality −1 (growth drag) is waived, so it doesn't
             // count toward the disqualification reasons shown below.
-            const eqDisqualifies = !!scored && scored.breakdown.earningsQuality === -1 && !scored.flags.benignEarningsQuality;
-            const levDisqualifies = !!scored && scored.breakdown.leverage === -1;
+            const causes = scored ? disqualificationCauses(scored.breakdown, row) : null;
+            const eqDisqualifies = !!causes?.earningsQuality;
+            const levDisqualifies = !!causes?.leverage;
             return (
               <>
               <tr key={row.ticker} className={`row-${tier}`}>
@@ -245,16 +247,22 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       <td
                         key={`${row.ticker}-${idx}`}
                         className={`num score-cell score-${tier}${scored.flags.disqualified ? ' score-disqualified' : ''}`}
-                        title={`Strength ${scored.strengthScore}/17 · Risk ${scored.riskScore}/16 — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
+                        title={`Strength ${scored.strengthScore}/${MAX_STRENGTH} · Risk ${scored.riskScore}/${MAX_RISK} · Data ${scored.coverage.covered}/${scored.coverage.applicable} — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
                         onClick={() => toggleExpanded(row.ticker)}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(row.ticker); } }}
                       >
                         <span className="score-value">{scored.strengthScore}</span>
-                        <span className="score-max">/17</span>
-                        {(scored.flags.disqualified || scored.riskScore >= 8) && (
-                          <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/16)`}>⚠</span>
+                        <span className="score-max">/{MAX_STRENGTH}</span>
+                        {(scored.flags.disqualified || scored.riskScore >= RISK_FLOOR) && (
+                          <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/${MAX_RISK})`}>⚠</span>
+                        )}
+                        {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < RISK_FLOOR && (
+                          <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
+                        )}
+                        {(scored.flags.valueTrap || scored.flags.peakCycle) && (
+                          <span className="score-flag" title={scored.flags.valueTrap ? 'Possible value trap: optically cheap with shrinking revenue — capped at Moderate.' : 'Possible cycle peak: cheap on trailing numbers while estimates roll over — capped at Moderate.'}>▽</span>
                         )}
                         <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
@@ -293,8 +301,27 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       })}
                     </div>
                     <div className="breakdown-meta">
-                      <span className="bd-strength">Strength {scored.strengthScore}/17</span>
-                      <span className="bd-risk">Risk {scored.riskScore}/16</span>
+                      <span className="bd-strength">Strength {scored.strengthScore}/{MAX_STRENGTH}</span>
+                      <span className="bd-risk">Risk {scored.riskScore}/{MAX_RISK}</span>
+                      <span className="bd-coverage" title="Applicable criteria with data behind them. Deliberately-neutralized criteria (e.g. FCF reads for financials) are excluded.">Data {scored.coverage.covered}/{scored.coverage.applicable}</span>
+                      {scored.flags.suspectRevenueGrowth && (
+                        <span className="bd-flag" title="The provider's revenue-growth figure is implausible (beyond sanity bounds) — neutralized rather than scored. Verify at the source.">⚑ Revenue growth looks implausible (neutralized)</span>
+                      )}
+                      {scored.flags.insufficientData && (
+                        <span className="bd-flag" title="Too few criteria have data to trust a tier — missing values can never flag risk, so sparse rows would otherwise look artificially safe.">◌ Insufficient data (tier capped at Weak)</span>
+                      )}
+                      {scored.flags.valueTrap && (
+                        <span className="bd-flag" title="Optically cheap (low EV/EBITDA or high FCF yield) while revenue is shrinking — the cheapness likely prices the decline, not a mispricing. Capped at Moderate.">▽ Possible value trap (cheap + shrinking)</span>
+                      )}
+                      {scored.flags.peakCycle && (
+                        <span className="bd-flag" title="Cyclical that looks cheap on trailing numbers while forward estimates roll over — the classic top-of-cycle signature. Capped at Moderate.">▽ Possible cycle peak (trailing cheap, estimates falling)</span>
+                      )}
+                      {scored.flags.serviceableLeverage && (
+                        <span className="bd-flag" title="D/E is above 2, but interest coverage is strong (≥6×) — the debt is comfortably serviced. Costs Risk points but does not disqualify.">✓ Leverage is serviceable (risk, not disqualifying)</span>
+                      )}
+                      {scored.flags.softEarningsQuality && (
+                        <span className="bd-flag" title="FCF/NI conversion is in the 0.5–0.7 band — earnings quality is questionable but not unambiguously broken (could be a working-capital swing or capex cycle). Costs Risk and caps the tier at Moderate.">▽ Soft earnings quality (capped at Moderate)</span>
+                      )}
                       {scored.flags.cyclical && (
                         <span className="bd-flag" title="Cyclical industry — a low forward P/E here often reflects peak earnings, so P/E compression is neutralized.">↻ Cyclical (compression neutralized)</span>
                       )}

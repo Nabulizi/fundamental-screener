@@ -94,6 +94,10 @@ export function normalizeFinnhub(
   const revenueGrowthRaw = toNumber(metric['revenueGrowthTTMYoy']);
   const debtEquityRaw = toNumber(metric['totalDebt/totalEquityQuarterly']);
   const evEbitdaRaw = toNumber(metric['evEbitdaTTM']);
+  const interestCoverageRaw = toNumber(metric['netInterestCoverageTTM']);
+  const revenueGrowthQuarterlyRaw = toNumber(metric['revenueGrowthQuarterlyYoy']);
+  const operatingMarginTtmRaw = toNumber(metric['operatingMarginTTM']);
+  const operatingMargin5yRaw = toNumber(metric['operatingMargin5Y']);
   // A real stock price is never <= 0; treat that as "no price" (unavailable).
   const rawPrice = toNumber(quote?.c);
   const currentPrice = rawPrice != null && rawPrice > 0 ? rawPrice : null;
@@ -118,8 +122,14 @@ export function normalizeFinnhub(
     // FCF Yield = 100 / Price-to-FCF ratio. Only meaningful when P/FCF > 0.
     fcfYieldPercent: pfcf != null && pfcf > 0 ? 100 / pfcf : null,
     revenueGrowthTTM: revenueGrowthRaw,
-    debtToEquity: debtEquityRaw != null && debtEquityRaw >= 0 ? debtEquityRaw : null,
+    // Negative D/E (negative book equity) is passed through — the scorer
+    // arbitrates distorted ratios via interest coverage rather than losing them.
+    debtToEquity: debtEquityRaw,
     evToEbitda: evEbitdaRaw != null && evEbitdaRaw > 0 ? evEbitdaRaw : null,
+    interestCoverage: interestCoverageRaw,
+    revenueGrowthQuarterly: revenueGrowthQuarterlyRaw,
+    operatingMarginTTM: operatingMarginTtmRaw,
+    operatingMargin5Y: operatingMargin5yRaw,
     currentPrice,
     // Raw (unclamped) position; null when price or range is unavailable/invalid.
     rangePosition: computeRangePosition(currentPrice, low, high),

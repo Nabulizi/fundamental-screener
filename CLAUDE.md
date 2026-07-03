@@ -7,8 +7,8 @@ Guidance for working in this repo. Keep it current when conventions change.
 Next.js 14 (App Router, TypeScript) fundamental screener. A user enters a watchlist of
 tickers and gets a sortable comparison table of 13 columns (Symbol, Score,
 Mkt Cap, Price, YTD, 52W Range, P/E TTM, P/E Fwd, Div Yld, FCF Yld, Rev Grw,
-D/E, EV/EBITDA) plus a weighted composite scoring system (10 criteria, tier
-weights ×3/×2/×1, split into a Strength Score 0–17 and a Risk Score 0–16, with
+D/E, EV/EBITDA) plus a weighted composite scoring system (12 criteria, tier
+weights ×3/×2/×1, split into a Strength Score 0–21 and a Risk Score 0–20, with
 hard-floor disqualifiers and cyclical/financial/crowding adjustments).
 Informational only — the UI must never give buy/sell advice or imply missing
 data equals zero; signal tiers are neutral (Strong / Moderate / Weak).
@@ -39,12 +39,16 @@ and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`)
 - `lib/scan.ts` — per-ticker orchestration with bounded concurrency + cache.
 - `lib/clientScan.ts` — drives the scan one ticker at a time from the browser for
   real "X of N" progress (one POST per ticker).
-- `lib/scoring.ts` — weighted composite scoring (10 criteria, 3 tier weights),
-  split into a Strength Score (0–17) and Risk Score (0–16). Pure functions:
+- `lib/scoring.ts` — weighted composite scoring (12 criteria, 3 tier weights),
+  split into a Strength Score (0–21) and Risk Score (0–20). Pure functions:
   `computeBreakdown`, `computeScores`, `scoreRow`, `isDisqualified`, `isCrowded`,
   `tierFor`, plus `isCyclicalIndustry`/`isFinancialIndustry`. Neutral tiers:
   `'strong' | 'moderate' | 'weak'`. `totalScore` (strength − risk) is retained
   as a convenience.
+- `lib/snapshotStore.ts` — append-only JSONL scan history (`data/snapshots.jsonl`,
+  git-ignored): first fresh result per ticker per local day, raw row + score
+  computed at write time + `SCORING_VERSION` stamp. `recordSnapshots` NEVER
+  throws; disable with `SNAPSHOTS_DISABLED=1`. Summary: `npm run snapshots`.
 - `lib/circuitBreaker.ts` — per-ticker failure tracking; skips after 3 failures
   for 60 s cooldown.
 - `lib/fearGreed.ts` + `app/api/feargreed/route.ts` — CNN Fear & Greed badge.
@@ -99,14 +103,71 @@ optional.
 - **Scoring system:** `lib/scoring.ts` uses tier weights (×3 Survival, ×2
   Fundamental, ×1 Timing) split into Strength (positives) and Risk (negatives).
   Hard floors force a "Weak" tier: a −1 on Earnings Quality or Leverage (a Tier 1
-  elimination), or a Risk Score ≥ 8. Exception: a −1 Earnings Quality is WAIVED
-  from the floor (still costs Risk) when it's a benign growth/capex drag — FCF
-  yield ≥ 2% and revenue growth > 20% (`isBenignEarningsQuality`); negative/weak
-  FCF never qualifies, preserving cash-burn protection. Adjustments: P/E compression is neutralized
-  for cyclicals (semis/autos); D/E is neutralized for financials and for
-  buyback-distorted equity (negative or D/E > 10, see `EXTREME_DE_RATIO`); a
-  mega-cap ($200B+) near its 52-week high is capped at Moderate.
-  Tiers by Strength: 12+ Strong, 7–11 Moderate, <7 Weak. The breakdown +
-  Strength/Risk/flags are visible per-row via an expandable detail row.
+  elimination), a Risk Score ≥ 8, or insufficient data coverage (below).
+  Earnings Quality is the FCF/NI **conversion ratio** (`fcfYield × PE / 100`;
+  +1 > 1.0, −1 < 0.7 — valuation-neutral by construction; do NOT revert to an
+  absolute yield-gap, which is biased against low multiples). **Graduated
+  eliminators** (binary cliffs on noisy TTM data are below institutional
+  evidence standards): an EQ −1 disqualifies only when unambiguous — FCF < 0
+  or conversion < `EQ_CONVERSION_CRITICAL` (0.5); the soft band 0.5–0.7 costs
+  Risk and CAPS the tier at Moderate (`softEarningsQuality` flag). Waiver: a
+  benign growth/capex drag — FCF yield ≥ 2% and revenue growth > 20%
+  (`isBenignEarningsQuality`) — suppresses both the floor and the cap;
+  negative/weak FCF never qualifies, preserving cash-burn protection.
+  **Leverage is coverage-first**: interest coverage < `WEAK_INTEREST_COVERAGE`
+  (2) scores −1 at ANY D/E (can't service debt = fatal); a D/E > 2 −1 with
+  coverage ≥ `STRONG_INTEREST_COVERAGE` (6) keeps its Risk points but is
+  WAIVED from disqualification (`serviceableLeverage` flag — the DELL case);
+  coverage missing or middling (2–6) stays disqualifying (conservative).
+  Cause attribution for the disqualification banner comes from
+  `disqualificationCauses()` — the UI must not re-derive waiver logic. Adjustments: P/E compression is ASYMMETRIC for
+  cyclicals (broad pattern set: semis, autos, energy, metals/mining, chemicals,
+  steel, marine, airlines, construction/building, paper — a +1 is suppressed,
+  a −1 from estimates rolling over still scores); for **financials** ALL
+  FCF-derived criteria
+  (Earnings Quality, FCF Level, Dividend Coverage) plus EV/EBITDA and D/E are
+  neutralized (P/FCF and EBITDA are noise for banks/insurers — verified live);
+  **REITs** get D/E neutralized (structural leverage) but keep FCF criteria;
+  a distorted D/E (negative or > `EXTREME_DE_RATIO` 10) is arbitrated by
+  interest coverage (`netInterestCoverageTTM` → `ScanRow.interestCoverage`):
+  coverage < `WEAK_INTEREST_COVERAGE` (2) → −1 (fatal, disqualifies), else
+  neutral — buyback distortion (MCD) stays waived, loss-wiped equity doesn't;
+  a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  **Known consequences (intentional, reviewed):** financials' maximum
+  achievable Strength is 11 (five criteria neutralized) so they can never
+  tier Strong — a deliberate limited-scorecard stance until a
+  financial-specific template exists; and coverage cannot distinguish
+  "provider gap" from "structurally inapplicable" (loss-makers have P/E
+  normalized to null), so sparse unprofitable names tend toward the
+  insufficient-data floor — conservative by design.
+  **Trap gates** (both cap the tier at Moderate + flag, because a falling
+  price/peaking earnings improves four criteria at once while decline shows in
+  at most one −2 signal): `isValueTrap` — optically cheap (EV/EBITDA < 8 or
+  FCF yield > 8%, `TRAP_CHEAP_*`) with shrinking revenue; `isPeakCycle` —
+  cyclical, optically cheap on trailing numbers, forward P/E > trailing
+  (estimates rolling over).
+  **Improvement criteria** (×2 each, from `metric=all` fields already
+  fetched): Revenue Acceleration — quarterly YoY vs TTM YoY, ±3pp band
+  (`REV_ACCEL_THRESHOLD_PP`); Margin Inflection — TTM operating margin vs its
+  5Y average, ±1pp band (`MARGIN_INFLECTION_PP`). They score the DERIVATIVE
+  (turnaround/pre-recognition detection); tier thresholds are deliberately
+  unchanged (12+ Strong, 7–11 Moderate), so rows without the data are
+  unaffected and improvement can legitimately lift a tier. Max scores are
+  Strength 21 / Risk 20 — use `MAX_STRENGTH`/`MAX_RISK`, never literals.
+  **Data guards:** implausible revenue growth is neutralized + flagged, never
+  scored (`sanitizeRevenueGrowth`, and `sanitizeQuarterlyRevGrowth` for the
+  acceleration input: financials > 60%, anyone > 300% — Finnhub returned
+  108.98% for JPM live) and never grants the benign-EQ waiver;
+  `computeCoverage` counts applicable criteria with data (deliberately-
+  neutralized ones excluded from the denominator) and `hasInsufficientData`
+  (coverage < 0.7, or missing FCF/D/E where applicable) floors the tier to
+  Weak — a null input can never score −1, so sparse rows must not look safer
+  than covered ones. Tiers by Strength: 12+ Strong, 7–11 Moderate, <7 Weak.
+  The breakdown + Strength/Risk/coverage/flags are visible per-row via an
+  expandable detail row.
 - `SortKey` includes `'score'` which is not a `ScanRow` field — `sortRows`
   accepts an optional `scoreMap` parameter for this virtual column.
+- **Bump `SCORING_VERSION`** (`lib/scoring.ts`) whenever criteria, thresholds,
+  or weights change — snapshots stamp it to separate methodology eras. Bump
+  `SNAPSHOT_SCHEMA_VERSION` (`lib/snapshotStore.ts`) only if the JSONL line
+  format changes.
