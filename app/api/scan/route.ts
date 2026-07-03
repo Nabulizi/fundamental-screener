@@ -4,6 +4,7 @@ import { createFinnhubProvider } from '@/lib/finnhub';
 import { createAlphaVantageProvider } from '@/lib/alphavantage';
 import { createFallbackProvider } from '@/lib/fallbackProvider';
 import { scanTickers } from '@/lib/scan';
+import { recordSnapshots } from '@/lib/snapshotStore';
 import type { QuoteProvider } from '@/lib/provider';
 import type { ScanError, ScanResponse } from '@/lib/types';
 
@@ -70,6 +71,9 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const result = await scanTickers(parsed.valid, provider, { ttlSeconds, refresh: body.refresh === true });
+    // Longitudinal scan history (first fresh result per ticker per day).
+    // recordSnapshots never throws; a snapshot failure never fails the scan.
+    await recordSnapshots(result.rows);
     const response: ScanResponse = {
       ...result,
       errors: [...invalidErrors, ...result.errors],
