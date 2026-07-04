@@ -554,6 +554,8 @@ button:disabled {
 
 .table-wrap {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100dvh - 260px);
   border: 1px solid var(--border);
   border-radius: 12px;
   -webkit-overflow-scrolling: touch;
@@ -602,6 +604,7 @@ tbody td {
 thead th {
   position: sticky;
   top: 0;
+  z-index: 2;
   height: auto;
   padding-top: 0.6rem;
   padding-bottom: 0.6rem;
