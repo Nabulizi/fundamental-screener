@@ -12,6 +12,8 @@ interface Props {
   currency: string | null;
   /** Trailing revenue growth (%), shown as neutral context for the implied number. */
   revenueGrowthTTM?: number | null;
+  /** True for financial-sector tickers, where FCF is noise (see scorecard neutralization). */
+  isFinancial?: boolean;
 }
 
 // Reverse DCF: rather than emit an intrinsic-value verdict (which reads as a
@@ -21,10 +23,26 @@ interface Props {
 //
 // ponytail: fcf0 is equity/levered FCF (Price/FCF based), so the DCF value is an
 // equity value compared directly to market cap; netCash stays 0 (see lib/dcf.ts).
-export default function DcfPanel({ fcf0, marketCap, currency, revenueGrowthTTM }: Props) {
+export default function DcfPanel({ fcf0, marketCap, currency, revenueGrowthTTM, isFinancial }: Props) {
   const [wacc, setWacc] = useState(11);
   const [terminal, setTerminal] = useState(3);
   const [years, setYears] = useState(10);
+
+  // Financials first: a broker/bank's "FCF" is dominated by customer-cash and
+  // balance-sheet movements, not operating earnings — the same reason the
+  // scorecard neutralizes FCF criteria for the sector. A DCF on it is noise.
+  if (isFinancial) {
+    return (
+      <section className="dcf">
+        <h2>What&rsquo;s priced in? (reverse DCF)</h2>
+        <p className="hint">
+          A cash-flow DCF isn&rsquo;t meaningful for financials — a bank or broker&rsquo;s cash flow is
+          driven by customer balances and balance-sheet movements, not operating earnings (the same
+          reason the scorecard neutralizes FCF criteria here). Informational only.
+        </p>
+      </section>
+    );
+  }
 
   if (fcf0 == null || fcf0 <= 0) {
     return (

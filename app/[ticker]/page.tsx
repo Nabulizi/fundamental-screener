@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { buildProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { parseTickers } from '@/lib/tickers';
-import { scoreRow, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
+import { scoreRow, isFinancialIndustry, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import {
   formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, formatRatio
 } from '@/lib/format';
@@ -84,7 +84,13 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         ))}
       </section>
 
-      <DcfPanel fcf0={fcf0} marketCap={row.marketCap} currency={row.currency} revenueGrowthTTM={row.revenueGrowthTTM} />
+      <DcfPanel
+        fcf0={fcf0}
+        marketCap={row.marketCap}
+        currency={row.currency}
+        revenueGrowthTTM={row.revenueGrowthTTM}
+        isFinancial={isFinancialIndustry(row.industry)}
+      />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>
     </Shell>
