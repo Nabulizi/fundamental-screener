@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
 import { parseTickers, DEFAULT_MAX_TICKERS } from '@/lib/tickers';
-import { createFinnhubProvider } from '@/lib/finnhub';
-import { createAlphaVantageProvider } from '@/lib/alphavantage';
-import { createFallbackProvider } from '@/lib/fallbackProvider';
+import { buildProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { recordSnapshots } from '@/lib/snapshotStore';
-import type { QuoteProvider } from '@/lib/provider';
 import type { ScanError, ScanResponse } from '@/lib/types';
 
 // The Finnhub key is read here, server-side only. This module is never bundled
@@ -20,14 +17,6 @@ interface ScanRequestBody {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const apiKey = process.env.FINNHUB_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: 'Server is not configured: FINNHUB_API_KEY is missing. See README.md.' },
-      { status: 500 }
-    );
-  }
-
   let body: ScanRequestBody;
   try {
     body = (await request.json()) as ScanRequestBody;
@@ -36,9 +25,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const maxTickers = Number(process.env.MAX_TICKERS) || DEFAULT_MAX_TICKERS;
-  const ttlSeconds = Number.isFinite(Number(process.env.CACHE_TTL_SECONDS))
-    ? Number(process.env.CACHE_TTL_SECONDS)
-    : 60;
+  const ttlSeconds = cacheTtlSeconds();
 
   const rawInput = body.input ?? (Array.isArray(body.tickers) ? body.tickers.join(' ') : '');
   const parsed = parseTickers(rawInput, maxTickers);
@@ -60,14 +47,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json(empty, { status: 200 });
   }
 
-  // Finnhub is primary. Multiple Finnhub keys (comma-separated) are each
-  // registered as separate providers for round-robin failover on rate limits.
-  // Alpha Vantage is appended last as the final fallback if configured.
-  const finnhubKeys = apiKey.split(',').map((k) => k.trim()).filter(Boolean);
-  const providers: QuoteProvider[] = finnhubKeys.map((key) => createFinnhubProvider(key));
-  const alphaVantageKey = process.env.ALPHAVANTAGE_API_KEY;
-  if (alphaVantageKey) providers.push(createAlphaVantageProvider(alphaVantageKey));
-  const provider = providers.length > 1 ? createFallbackProvider(providers) : providers[0];
+  const provider = buildProvider();
+  if (!provider) {
+    return NextResponse.json(
+      { error: 'Server is not configured: FINNHUB_API_KEY is missing. See README.md.' },
+      { status: 500 }
+    );
+  }
 
   try {
     const result = await scanTickers(parsed.valid, provider, { ttlSeconds, refresh: body.refresh === true });

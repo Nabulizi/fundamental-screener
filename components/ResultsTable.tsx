@@ -1,6 +1,7 @@
 'use client';
 
 import { type ReactNode, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import type { ScanRow } from '@/lib/types';
 import { type SortDir, type SortKey } from '@/lib/sort';
 import { formatCurrency, formatMarketCap, formatPe, formatPercent, formatReturn, formatRatio, NA } from '@/lib/format';
@@ -36,7 +37,7 @@ function IdentityCell({ row, freshness }: { row: ScanRow; freshness: Freshness }
   return (
     <div className="identity">
       <div className="identity-top">
-        <span className="identity-ticker">{row.ticker}</span>
+        <Link href={`/${row.ticker}`} className="identity-ticker">{row.ticker}</Link>
         {/* Hide the badge for fresh rows so "FRESH" doesn't repeat down every
             row; only cached/stale rows get a badge. Legend above explains all. */}
         {freshness !== 'fresh' && <FreshnessBadge freshness={freshness} />}
