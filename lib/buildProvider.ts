@@ -1,3 +1,7 @@
+// Build-time guard: importing this module from a client component is now a
+// hard error, not just a convention — the API keys read below can never reach
+// the browser bundle. (CLAUDE.md: the load-bearing security boundary.)
+import 'server-only';
 import { createFinnhubProvider } from './finnhub';
 import { createAlphaVantageProvider } from './alphavantage';
 import { createFallbackProvider } from './fallbackProvider';

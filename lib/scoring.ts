@@ -329,6 +329,15 @@ const CYCLICAL_PATTERNS = [
 // ALSO neutralized: P/FCF and EBITDA are economically meaningless for banks and
 // insurers, and providers feed noise for them (verified live: Finnhub returns
 // a P/FCF of ~6 for JPM, i.e. a 16.7% "FCF yield").
+// Known limitation: this gate is industry-LABEL based, so it can't classify by
+// economic business model — and both the scorecard's FCF neutralization AND the
+// detail-page DCF gate depend on it. Consequences: card lenders (COF/DFS) can
+// slip through and show a DCF when their label overlaps payment networks (V/MA,
+// which correctly should NOT gate); conversely capital-markets/asset-management
+// names (BLK, exchanges, ratings/data) may be OVER-neutralized depending on the
+// provider's label. Broadening the regex makes the false-positives worse, not
+// better (asset-light fee businesses have real, DCF-able FCF). The real fix is a
+// curated business-model classification, not wider patterns — a Stage-2 change.
 const FINANCIAL_PATTERNS = [/financ/i, /\bbank/i, /insurance/i, /capital markets/i];
 
 // REITs carry structurally higher leverage (property-backed debt), so D/E is

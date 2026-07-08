@@ -5,7 +5,11 @@
 export interface DcfInputs {
   /** Base free cash flow (period 0). Absolute, in the units you want out. */
   fcf0: number;
-  /** Annual discount rate (WACC), e.g. 0.11 for 11%. Must exceed terminalGrowth. */
+  /**
+   * Annual discount rate, e.g. 0.11 for 11%. Must exceed terminalGrowth.
+   * Use COST OF EQUITY when fcf0 is equity/levered FCF (the current caller);
+   * WACC only belongs with unlevered/firm-level FCF. Don't conflate the two.
+   */
   discountRate: number;
   /** FCF growth during the explicit horizon, e.g. 0.10 for 10%. */
   growth: number;
@@ -27,9 +31,13 @@ export interface DcfResult {
   pvExplicit: number;
   pvTerminal: number;
   terminalValue: number;
-  /** PV of explicit FCF + PV of terminal value. */
+  /**
+   * PV of the projected FCF stream + terminal value. This is an EQUITY value
+   * when fcf0 is equity/levered FCF (the current caller) — a true enterprise
+   * value only when fcf0 is unlevered. Named generically; read it by basis.
+   */
   enterpriseValue: number;
-  /** enterpriseValue + netCash. */
+  /** enterpriseValue + netCash (netCash stays 0 for equity FCF — see netCash). */
   equityValue: number;
 }
 

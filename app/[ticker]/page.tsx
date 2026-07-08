@@ -16,7 +16,12 @@ export default async function TickerPage({ params }: { params: { ticker: string 
   // Next.js App Router already URI-decodes dynamic segments; don't decode again.
   const raw = params.ticker.toUpperCase();
   const parsed = parseTickers(raw, 1);
-  const symbol = parsed.valid[0];
+  // A per-ticker route must be exactly ONE clean ticker — reject multi-token
+  // paths like /AAPL,MSFT (which would otherwise silently load AAPL) or any
+  // junk/duplicate tokens, rather than quietly resolving to the first match.
+  const cleanSingle =
+    parsed.valid.length === 1 && parsed.invalid.length === 0 && !parsed.limited && parsed.duplicatesRemoved === 0;
+  const symbol = cleanSingle ? parsed.valid[0] : undefined;
 
   if (!symbol) return <Shell><p className="message">&ldquo;{raw}&rdquo; is not a valid ticker symbol.</p></Shell>;
 
