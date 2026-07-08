@@ -140,4 +140,12 @@ describe('marketImpliedGrowthPct / seedScenarioGrowths (Phase 4 anchoring)', () 
     expect(marketImpliedGrowthPct(-5, 1e9, shared).pct).toBeNull();
     expect(marketImpliedGrowthPct(100, 1e9, { costOfEquity: 0.05, terminalGrowth: 0.049, years: 10 }).pct).toBeNull();
   });
+
+  it('invalid years (cleared Horizon → 0, or non-finite) fails closed, never throws', () => {
+    for (const years of [0, -1, NaN, Number.POSITIVE_INFINITY]) {
+      let out!: { pct: number | null; outOfRange: boolean };
+      expect(() => { out = marketImpliedGrowthPct(4.7e9, 1.5e12, { costOfEquity: 0.11, terminalGrowth: 0.03, years }); }).not.toThrow();
+      expect(out).toEqual({ pct: null, outOfRange: false });
+    }
+  });
 });
