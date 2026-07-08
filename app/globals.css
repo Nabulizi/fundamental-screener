@@ -976,6 +976,19 @@ tr.row-weak:hover { background: var(--panel-2); }
 .driver-value { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .drivers .hint { margin-top: 0.6rem; }
 
+.peers { margin-top: 2rem; }
+.peers h2 { margin: 0 0 0.6rem; font-size: 1.15rem; }
+.peers-input { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; }
+.peers-input input[type="text"] { flex: 1 1 260px; padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; }
+.peers-input select { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; }
+.peers-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.peers-table th[scope="row"] { font-weight: 600; }
+.peers-self, .peers-self-row { color: #fbbf24; }
+.peers-self-row td { border-top: 2px solid var(--border); }
+.peers-median th, .peers-median td { border-top: 2px solid var(--border); color: var(--muted); }
+.peers-tier { text-transform: capitalize; }
+.peers-na { color: var(--muted); font-style: italic; text-align: left; }
+
 .ft { margin-top: 2rem; }
 .ft h2 { margin: 0 0 0.6rem; font-size: 1.15rem; }
 .ft-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
