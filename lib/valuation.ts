@@ -128,8 +128,10 @@ export interface Drivers {
   sbcPctRevenue: number | null;
   /** Diluted-share-count change over the window, % (+ = more shares). Raw delta. */
   shareCountChange: number | null;
-  /** Years spanned by the window metrics (CAGR / share change), for context. */
-  windowYears: number | null;
+  /** Years spanned by the revenue-CAGR window (revenue and share data can differ). */
+  revenueWindowYears: number | null;
+  /** Years spanned by the share-count-change window. */
+  shareCountWindowYears: number | null;
 }
 
 /** Most recent ≤maxYears fiscal years of history. */
@@ -165,23 +167,26 @@ export function computeDrivers(profile: ValuationProfile | null): Drivers {
 
   const rev = win.filter((y) => y.revenue != null && (y.revenue as number) > 0);
   let revenueCagr: number | null = null;
-  let windowYears: number | null = null;
+  let revenueWindowYears: number | null = null;
   if (rev.length >= 2) {
     const a = rev[0];
     const b = rev[rev.length - 1];
     const span = b.fiscalYear - a.fiscalYear;
     if (span >= 1) {
       revenueCagr = ((b.revenue! / a.revenue!) ** (1 / span) - 1) * 100;
-      windowYears = span;
+      revenueWindowYears = span;
     }
   }
 
+  // Revenue and share data can cover different usable years — track spans separately.
   const sh = win.filter((y) => y.sharesDiluted != null && (y.sharesDiluted as number) > 0);
   let shareCountChange: number | null = null;
+  let shareCountWindowYears: number | null = null;
   if (sh.length >= 2) {
     const a = sh[0];
     const b = sh[sh.length - 1];
     shareCountChange = ((b.sharesDiluted! - a.sharesDiluted!) / a.sharesDiluted!) * 100;
+    shareCountWindowYears = b.fiscalYear - a.fiscalYear;
   }
 
   return {
@@ -191,6 +196,7 @@ export function computeDrivers(profile: ValuationProfile | null): Drivers {
     capexIntensity: latestRatioPct(history, (y) => y.capex, (y) => y.revenue),
     sbcPctRevenue: latestRatioPct(history, (y) => y.stockBasedCompensation, (y) => y.revenue),
     shareCountChange,
-    windowYears,
+    revenueWindowYears,
+    shareCountWindowYears,
   };
 }
