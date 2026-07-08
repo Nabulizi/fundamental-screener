@@ -48,22 +48,23 @@ export default function DcfPanel({ fcf0, marketCap, currency, revenueGrowthTTM, 
     );
   }
 
-  if (fcf0 == null || fcf0 <= 0) {
+  // Build base options from BOTH the TTM figure and history FIRST. A negative or
+  // absent TTM FCF must NOT hide the panel when a positive normalized average
+  // exists — that positive history is exactly what Phase 2 exists to surface.
+  // Only bail when no positive base exists anywhere. With no usable history the
+  // options collapse to [TTM] and the panel behaves like the TTM-only version.
+  const options = fcfBaseOptions(profile ?? null, fcf0);
+  if (options.length === 0) {
     return (
       <section className="dcf">
         <h2>What&rsquo;s priced in? (reverse DCF)</h2>
         <p className="hint">
-          A reverse DCF needs positive free cash flow. This company&rsquo;s FCF is unavailable or
-          negative, so it isn&rsquo;t meaningful here — informational only.
+          A reverse DCF needs positive free cash flow. Neither trailing-twelve-month nor multi-year
+          normalized FCF is positive here, so it isn&rsquo;t meaningful — informational only.
         </p>
       </section>
     );
   }
-
-  // Base options honor the availability rules (TTM always; 3Y avg ≥2 usable
-  // years; 5Y avg ≥3). With no usable history, options is [TTM] → the selector
-  // is hidden and the panel behaves exactly like the TTM-only version.
-  const options = fcfBaseOptions(profile ?? null, fcf0);
   const selectedOpt = options.find((o) => o.key === baseKey) ?? options[0];
   const effectiveFcf = customFcf ?? selectedOpt.value;
   const hasSelector = options.length > 1;
@@ -123,6 +124,7 @@ export default function DcfPanel({ fcf0, marketCap, currency, revenueGrowthTTM, 
               value={Math.round(effectiveFcf)}
               onChange={(e) => setCustomFcf(Number(e.target.value))}
             />
+            <span className="dcf-unit">≈ {formatMarketCap(effectiveFcf, currency)}</span>
           </label>
         </div>
       )}

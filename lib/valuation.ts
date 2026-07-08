@@ -90,16 +90,20 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
  */
 export function fcfBaseOptions(profile: ValuationProfile | null, ttm: number | null): FcfBaseOption[] {
   const opts: FcfBaseOption[] = [];
-  if (ttm != null) opts.push({ key: 'ttm', label: 'TTM', value: ttm, yearsUsed: 1 });
+  // Only POSITIVE bases are usable for a reverse DCF. A negative/absent TTM does
+  // not block the panel if a positive normalized average exists (Phase 2 intent).
+  if (ttm != null && ttm > 0) opts.push({ key: 'ttm', label: 'TTM', value: ttm, yearsUsed: 1 });
 
   const usable = usableFcfValues(profile);
   if (usable.length >= 2) {
     const n = Math.min(3, usable.length);
-    opts.push({ key: 'avg3', label: `3Y avg (${n} yr)`, value: mean(usable.slice(0, n)), yearsUsed: n });
+    const value = mean(usable.slice(0, n));
+    if (value > 0) opts.push({ key: 'avg3', label: `3Y avg (${n} yr)`, value, yearsUsed: n });
   }
   if (usable.length >= 3) {
     const n = Math.min(5, usable.length);
-    opts.push({ key: 'avg5', label: `5Y avg (${n} yr)`, value: mean(usable.slice(0, n)), yearsUsed: n });
+    const value = mean(usable.slice(0, n));
+    if (value > 0) opts.push({ key: 'avg5', label: `5Y avg (${n} yr)`, value, yearsUsed: n });
   }
   return opts;
 }
