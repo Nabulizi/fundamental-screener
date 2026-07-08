@@ -4,11 +4,12 @@ import { scanTickers } from '@/lib/scan';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isFinancialIndustry, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import { getCachedValuation, setCachedValuation } from '@/lib/valuationCache';
-import type { ValuationProfile, ValuationProvider } from '@/lib/valuation';
+import { computeDrivers, type ValuationProfile, type ValuationProvider } from '@/lib/valuation';
 import {
   formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, formatRatio
 } from '@/lib/format';
 import DcfPanel from '@/components/DcfPanel';
+import DriverStrip from '@/components/DriverStrip';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -63,6 +64,11 @@ export default async function TickerPage({ params }: { params: { ticker: string 
     return <Shell><p className="message">Couldn&rsquo;t load {symbol}{err ? ` — ${err.message}` : '.'}</p></Shell>;
   }
   const profile = valSettled.status === 'fulfilled' ? valSettled.value : null;
+  const drivers = profile ? computeDrivers(profile) : null;
+  const showDrivers = drivers != null && [
+    drivers.revenueCagr, drivers.operatingMargin, drivers.fcfMargin,
+    drivers.capexIntensity, drivers.sbcPctRevenue, drivers.shareCountChange
+  ].some((v) => v != null);
 
   const scored = scoreRow(row);
   // Equity FCF yield is Price/FCF based (see types.ts), so absolute FCF ≈ marketCap × yield.
@@ -107,6 +113,8 @@ export default async function TickerPage({ params }: { params: { ticker: string 
           </div>
         ))}
       </section>
+
+      {showDrivers && <DriverStrip drivers={drivers} />}
 
       <DcfPanel
         fcf0={fcf0}

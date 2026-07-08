@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, type ValuationProfile
+  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, computeDrivers,
+  type ValuationProfile, type ValuationYear
 } from '@/lib/valuation';
 import { parseFinancialsReported } from '@/lib/valuationProvider';
 
@@ -154,5 +155,52 @@ describe('fcfBaseOptions / defaultFcfBaseKey (Phase 2 availability rules)', () =
   it('excludes a base whose value is not positive (no unusable negative base)', () => {
     expect(fcfBaseOptions(profileWithFcf([-100, -50]), null)).toEqual([]); // avg negative → dropped
     expect(fcfBaseOptions(null, -5)).toEqual([]); // negative TTM, no history → no base at all
+  });
+});
+
+describe('computeDrivers (Phase 3)', () => {
+  it('derives each driver from the AAPL fixture (latest year + recent window)', () => {
+    const p = parseFinancialsReported(fixture('AAPL.financials-reported.json'), 'AAPL', AT);
+    const d = computeDrivers(p);
+    // Latest-year (2025) ratios: 133050/416161, 98767/416161, 12715/416161, 12863/416161.
+    expect(d.operatingMargin).toBeCloseTo(31.97, 1);
+    expect(d.fcfMargin).toBeCloseTo(23.73, 1);
+    expect(d.capexIntensity).toBeCloseTo(3.06, 1);
+    expect(d.sbcPctRevenue).toBeCloseTo(3.09, 1);
+    // Window (2021→2025) metrics — split-free, real buyback:
+    expect(d.revenueCagr).not.toBeNull();
+    expect(d.revenueCagr!).toBeGreaterThan(0);
+    expect(d.shareCountChange).toBeCloseTo(-11.03, 1); // 15.00B / 16.86B − 1
+    expect(d.windowYears).toBe(4);
+  });
+
+  it('degrades each metric independently to null (never coerced)', () => {
+    const y = (over: Partial<ValuationYear>): ValuationYear => ({
+      fiscalYear: 2024, fiscalPeriodEnd: null, revenue: null, operatingIncome: null,
+      operatingCashFlow: null, capex: null, freeCashFlow: null, stockBasedCompensation: null, sharesDiluted: null, ...over,
+    });
+    // Revenue present + op income, but no FCF/capex/SBC/shares → only margins compute.
+    const p: ValuationProfile = {
+      ticker: 'T', fcfTtm: null, sharesOutstanding: null, netCash: null, source: 'finnhub-reported', retrievedAt: AT,
+      history: [
+        { ...y({ fiscalYear: 2023, revenue: 1000, operatingIncome: 100 }) },
+        { ...y({ fiscalYear: 2024, revenue: 1200, operatingIncome: 180 }) },
+      ],
+    };
+    const d = computeDrivers(p);
+    expect(d.operatingMargin).toBeCloseTo(15, 5);   // 180/1200
+    expect(d.revenueCagr).toBeCloseTo(20, 5);       // 1200/1000 over 1yr
+    expect(d.fcfMargin).toBeNull();
+    expect(d.capexIntensity).toBeNull();
+    expect(d.sbcPctRevenue).toBeNull();
+    expect(d.shareCountChange).toBeNull();           // no share data
+  });
+
+  it('empty / null profile → all-null drivers, no throw', () => {
+    const d = computeDrivers(null);
+    expect(d.revenueCagr).toBeNull();
+    expect(d.operatingMargin).toBeNull();
+    expect(d.shareCountChange).toBeNull();
+    expect(d.windowYears).toBeNull();
   });
 });

@@ -112,3 +112,85 @@ export function fcfBaseOptions(profile: ValuationProfile | null, ttm: number | n
 export function defaultFcfBaseKey(profile: ValuationProfile | null): FcfBaseKey {
   return usableFcfValues(profile).length >= 3 ? 'avg3' : 'ttm';
 }
+
+// --- Driver context (Phase 3) -----------------------------------------------
+
+export interface Drivers {
+  /** Revenue CAGR over the recent window, %/yr. */
+  revenueCagr: number | null;
+  /** Latest operating income / revenue, %. */
+  operatingMargin: number | null;
+  /** Latest free cash flow / revenue, %. */
+  fcfMargin: number | null;
+  /** Latest capex / revenue, %. */
+  capexIntensity: number | null;
+  /** Latest stock-based comp / revenue, %. */
+  sbcPctRevenue: number | null;
+  /** Diluted-share-count change over the window, % (+ = more shares). Raw delta. */
+  shareCountChange: number | null;
+  /** Years spanned by the window metrics (CAGR / share change), for context. */
+  windowYears: number | null;
+}
+
+/** Most recent ≤maxYears fiscal years of history. */
+function recentWindow(history: ValuationYear[], maxYears = 5): ValuationYear[] {
+  if (history.length === 0) return [];
+  const latestYear = history[history.length - 1].fiscalYear;
+  return history.filter((y) => y.fiscalYear > latestYear - maxYears);
+}
+
+/** Newest year with both numerator and denominator present (den ≠ 0) → num/den %. */
+function latestRatioPct(
+  history: ValuationYear[],
+  num: (y: ValuationYear) => number | null,
+  den: (y: ValuationYear) => number | null
+): number | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const n = num(history[i]);
+    const d = den(history[i]);
+    if (n != null && d != null && d !== 0) return (n / d) * 100;
+  }
+  return null;
+}
+
+/**
+ * Neutral trailing drivers over a recent (≤5y) window. Each degrades to null
+ * independently. Share-count change is deliberately a RAW delta over the window
+ * (issuance / buybacks / SBC / splits / M&A combined) — never interpreted as
+ * buybacks. A short window also limits split contamination.
+ */
+export function computeDrivers(profile: ValuationProfile | null): Drivers {
+  const history = profile?.history ?? [];
+  const win = recentWindow(history, 5);
+
+  const rev = win.filter((y) => y.revenue != null && (y.revenue as number) > 0);
+  let revenueCagr: number | null = null;
+  let windowYears: number | null = null;
+  if (rev.length >= 2) {
+    const a = rev[0];
+    const b = rev[rev.length - 1];
+    const span = b.fiscalYear - a.fiscalYear;
+    if (span >= 1) {
+      revenueCagr = ((b.revenue! / a.revenue!) ** (1 / span) - 1) * 100;
+      windowYears = span;
+    }
+  }
+
+  const sh = win.filter((y) => y.sharesDiluted != null && (y.sharesDiluted as number) > 0);
+  let shareCountChange: number | null = null;
+  if (sh.length >= 2) {
+    const a = sh[0];
+    const b = sh[sh.length - 1];
+    shareCountChange = ((b.sharesDiluted! - a.sharesDiluted!) / a.sharesDiluted!) * 100;
+  }
+
+  return {
+    revenueCagr,
+    operatingMargin: latestRatioPct(history, (y) => y.operatingIncome, (y) => y.revenue),
+    fcfMargin: latestRatioPct(history, (y) => y.freeCashFlow, (y) => y.revenue),
+    capexIntensity: latestRatioPct(history, (y) => y.capex, (y) => y.revenue),
+    sbcPctRevenue: latestRatioPct(history, (y) => y.stockBasedCompensation, (y) => y.revenue),
+    shareCountChange,
+    windowYears,
+  };
+}
