@@ -157,7 +157,7 @@ export const RISK_FLOOR = 8;
  * methodology eras in the longitudinal record so v3 scores are never compared
  * naively against scores produced by different rules.
  */
-export const SCORING_VERSION = 3;
+export const SCORING_VERSION = 4;
 
 /** Mega-cap cutoff (raw currency units) for the crowding overlay. */
 export const MEGA_CAP_THRESHOLD = 200_000_000_000;
@@ -357,6 +357,66 @@ export function isReitIndustry(industry: string | null | undefined): boolean {
   return industry != null && REIT_PATTERNS.some((re) => re.test(industry));
 }
 
+export type FinancialModel = 'balance-sheet' | 'asset-light' | 'non-financial';
+
+// Curated ticker overrides — ONLY for names whose industry LABEL misclassifies
+// their economic model. Keyed by upper-case ticker.
+//
+// MAINTENANCE: keep this list SMALL and review it periodically. Industry labels
+// drift, companies get acquired or reclassified, and new ambiguous names appear.
+// The regex fallback (isFinancialIndustry) handles the unambiguous bulk; only add
+// a ticker here when its label sends it to the wrong bucket. Adding or removing a
+// ticker changes scorecard neutralization → bump SCORING_VERSION.
+const OVERRIDE_BALANCE_SHEET = new Set([
+  // Card / consumer lenders: hold receivables + credit risk but are labeled
+  // "Credit Services" (which the regex misses) — must be gated like banks.
+  'COF', 'DFS', 'AXP', 'SYF', 'ALLY',
+]);
+const OVERRIDE_ASSET_LIGHT = new Set([
+  // Fee / data / index / exchange / network businesses with real, DCF-able FCF —
+  // must NOT be gated even though the label looks financial.
+  'BLK', 'TROW', 'BEN',                  // asset managers
+  'CME', 'ICE', 'NDAQ', 'CBOE',          // exchanges
+  'SPGI', 'MCO', 'MSCI', 'FDS', 'MORN',  // ratings / data / index
+  'V', 'MA',                             // payment networks
+]);
+
+/**
+ * Classify a company's financial business MODEL, not just its sector label.
+ * Balance-sheet/spread businesses (banks, insurers, brokers holding customer
+ * assets, card lenders) → 'balance-sheet' (FCF-neutralized in scoring, DCF-gated).
+ * Asset-light fee/data/exchange/network financials have real FCF → 'asset-light'
+ * (scored and DCF'd normally). Everything else → 'non-financial'.
+ *
+ * Curated ticker overrides win; otherwise it falls back to the industry-label
+ * regex, which conservatively treats an unrecognized financial label as
+ * balance-sheet (same as pre-Phase-5 behavior).
+ */
+export function classifyFinancialModel(
+  ticker: string | null | undefined,
+  industry: string | null | undefined
+): FinancialModel {
+  const t = (ticker ?? '').toUpperCase();
+  if (OVERRIDE_BALANCE_SHEET.has(t)) return 'balance-sheet';
+  if (OVERRIDE_ASSET_LIGHT.has(t)) return 'asset-light';
+  return isFinancialIndustry(industry) ? 'balance-sheet' : 'non-financial';
+}
+
+/**
+ * True when a company should be treated as a balance-sheet financial — FCF is
+ * noise, so scoring neutralizes FCF-derived criteria and the detail-page DCF is
+ * gated off. The SINGLE predicate both the scorecard and the DCF gate call, so
+ * they never diverge. (The revenue-growth suspect bound in sanitizeGrowthValue
+ * deliberately stays on the label regex — it guards a provider label artifact,
+ * not the economic model.)
+ */
+export function isBalanceSheetFinancial(
+  ticker: string | null | undefined,
+  industry: string | null | undefined
+): boolean {
+  return classifyFinancialModel(ticker, industry) === 'balance-sheet';
+}
+
 function n(v: number | null | undefined): number | null {
   return v != null && Number.isFinite(v) ? v : null;
 }
@@ -372,7 +432,7 @@ export function computeBreakdown(row: ScanRow): ScoreBreakdown {
   const ytd = n(row.ytdReturn);
   const rangePos = n(row.rangePosition != null ? clampFraction(row.rangePosition) : null);
 
-  const financial = isFinancialIndustry(row.industry);
+  const financial = isBalanceSheetFinancial(row.ticker, row.industry);
 
   // #1 — Earnings quality: FCF/NI conversion ratio (fcfYield × PE / 100).
   // Valuation-neutral: the same ratio threshold applies at every multiple.
@@ -527,7 +587,7 @@ export const TRAP_CHEAP_FCF_YIELD = 8;  // FCF yield above this (%) is "deep che
  * the scorer neutralizes for them — noise cannot make a bank "cheap".
  */
 export function isOpticallyCheap(row: ScanRow): boolean {
-  if (isFinancialIndustry(row.industry)) return false;
+  if (isBalanceSheetFinancial(row.ticker, row.industry)) return false;
   const ev = row.evToEbitda != null && Number.isFinite(row.evToEbitda) ? row.evToEbitda : null;
   const fcf = row.fcfYieldPercent != null && Number.isFinite(row.fcfYieldPercent) ? row.fcfYieldPercent : null;
   return (ev != null && ev < TRAP_CHEAP_EV_EBITDA) || (fcf != null && fcf > TRAP_CHEAP_FCF_YIELD);
@@ -581,7 +641,7 @@ export function computeCoverage(row: ScanRow): CriterionCoverage {
   const ytd = n(row.ytdReturn);
   const rangePos = n(row.rangePosition != null ? clampFraction(row.rangePosition) : null);
 
-  const financial = isFinancialIndustry(row.industry);
+  const financial = isBalanceSheetFinancial(row.ticker, row.industry);
   const perCriterion: Record<keyof ScoreBreakdown, { applicable: boolean; covered: boolean }> = {
     earningsQuality: { applicable: !financial, covered: fcf != null && (fcf < 0 || pe != null) },
     leverage: { applicable: !financial && !isReitIndustry(row.industry), covered: de != null },
@@ -615,7 +675,7 @@ export function computeCoverage(row: ScanRow): CriterionCoverage {
  */
 export function hasInsufficientData(row: ScanRow, coverage: CriterionCoverage = computeCoverage(row)): boolean {
   if (coverage.fraction < MIN_CRITERION_COVERAGE) return true;
-  const financial = isFinancialIndustry(row.industry);
+  const financial = isBalanceSheetFinancial(row.ticker, row.industry);
   if (!financial && n(row.fcfYieldPercent) == null) return true;
   if (!financial && !isReitIndustry(row.industry) && n(row.debtToEquity) == null) return true;
   return false;
@@ -772,7 +832,7 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
 
   switch (key) {
     case 'earningsQuality':
-      if (isFinancialIndustry(row.industry)) return 'financial — FCF-based read neutralized';
+      if (isBalanceSheetFinancial(row.ticker, row.industry)) return 'financial — FCF-based read neutralized';
       if (fcf != null && fcf < 0) return `FCF ${formatPercent(fcf)} (negative)`;
       if (fcf != null && pe != null && pe > 0) {
         return `FCF/NI ${formatRatio((fcf * pe) / 100)} (FCF ${formatPercent(fcf)} vs EY ${formatPercent(100 / pe)})`;
@@ -780,7 +840,7 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
       return 'no data';
     case 'leverage': {
       if (de == null) return 'no data';
-      if (isFinancialIndustry(row.industry)) return `D/E ${formatRatio(de)} · financial — neutralized`;
+      if (isBalanceSheetFinancial(row.ticker, row.industry)) return `D/E ${formatRatio(de)} · financial — neutralized`;
       if (isReitIndustry(row.industry)) return `D/E ${formatRatio(de)} · REIT — neutralized`;
       const ic = n(row.interestCoverage);
       if (ic != null && ic < WEAK_INTEREST_COVERAGE) {
@@ -815,7 +875,7 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
       return `Q ${formatReturn(qs.value)} vs TTM ${formatReturn(ts.value)} YoY`;
     }
     case 'fcfYieldLevel':
-      if (isFinancialIndustry(row.industry)) return 'financial — FCF-based read neutralized';
+      if (isBalanceSheetFinancial(row.ticker, row.industry)) return 'financial — FCF-based read neutralized';
       return fcf != null ? formatPercent(fcf) : 'no data';
     case 'marginInflection': {
       const t = n(row.operatingMarginTTM);
@@ -829,10 +889,10 @@ export function criterionEvidence(row: ScanRow, key: keyof ScoreBreakdown): stri
         ? `Fwd ${formatPe(fwdPe)} vs TTM ${formatPe(pe)} · cyclical — neutralized`
         : `Fwd ${formatPe(fwdPe)} vs TTM ${formatPe(pe)}`;
     case 'valuation':
-      if (isFinancialIndustry(row.industry)) return 'financial — EV/EBITDA neutralized';
+      if (isBalanceSheetFinancial(row.ticker, row.industry)) return 'financial — EV/EBITDA neutralized';
       return ev != null ? `EV/EBITDA ${formatRatio(ev)}` : 'no data';
     case 'dividendCoverage':
-      if (isFinancialIndustry(row.industry)) return 'financial — FCF-based read neutralized';
+      if (isBalanceSheetFinancial(row.ticker, row.industry)) return 'financial — FCF-based read neutralized';
       if (div == null || div <= 0) return 'no dividend';
       if (fcf == null) return `Div ${formatPercent(div)} · FCF n/a`;
       return `FCF ${formatPercent(fcf)} vs Div ${formatPercent(div)}`;

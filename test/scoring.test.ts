@@ -13,6 +13,8 @@ import {
   isCrowded,
   isCyclicalIndustry,
   isFinancialIndustry,
+  classifyFinancialModel,
+  isBalanceSheetFinancial,
   computeCoverage,
   CRITERION_WEIGHT,
   CRITERION_BENCHMARK,
@@ -547,6 +549,51 @@ describe('industry classification helpers', () => {
     expect(isFinancialIndustry('Insurance')).toBe(true);
     expect(isFinancialIndustry('Technology')).toBe(false);
     expect(isFinancialIndustry(null)).toBe(false);
+  });
+});
+
+describe('classifyFinancialModel (Phase 5, ticker-aware)', () => {
+  it('gates balance-sheet / spread financials', () => {
+    // Regex-matched via label:
+    for (const [t, ind] of [['JPM', 'Banks'], ['BAC', 'Banks'], ['MET', 'Insurance—Life'],
+      ['SCHW', 'Capital Markets'], ['IBKR', 'Capital Markets'], ['HOOD', 'Financial Services']] as const) {
+      expect(classifyFinancialModel(t, ind), t).toBe('balance-sheet');
+      expect(isBalanceSheetFinancial(t, ind), t).toBe(true);
+    }
+    // Curated overrides for card lenders the regex misses ("Credit Services"):
+    for (const t of ['COF', 'DFS', 'AXP', 'SYF', 'ALLY']) {
+      expect(classifyFinancialModel(t, 'Credit Services'), t).toBe('balance-sheet');
+    }
+  });
+
+  it('does NOT gate asset-light financial-adjacent names (real DCF-able FCF)', () => {
+    const cases: [string, string][] = [
+      ['BLK', 'Asset Management'], ['TROW', 'Asset Management'],
+      ['CME', 'Financial Data & Stock Exchanges'], ['ICE', 'Financial Data & Stock Exchanges'],
+      ['NDAQ', 'Financial Data & Stock Exchanges'], ['CBOE', 'Financial Data & Stock Exchanges'],
+      ['SPGI', 'Financial Data & Stock Exchanges'], ['MCO', 'Financial Data & Stock Exchanges'],
+      ['MSCI', 'Financial Data & Stock Exchanges'], ['V', 'Credit Services'], ['MA', 'Credit Services'],
+    ];
+    for (const [t, ind] of cases) {
+      expect(classifyFinancialModel(t, ind), t).toBe('asset-light');
+      expect(isBalanceSheetFinancial(t, ind), t).toBe(false);
+    }
+  });
+
+  it('non-financials and unknown labels are non-financial', () => {
+    expect(classifyFinancialModel('AAPL', 'Technology')).toBe('non-financial');
+    expect(classifyFinancialModel('XOM', 'Oil & Gas Integrated')).toBe('non-financial');
+    expect(isBalanceSheetFinancial('AAPL', 'Technology')).toBe(false);
+  });
+
+  it('changes neutralization: COF now gated, SPGI now scored (SCORING_VERSION bump)', () => {
+    // COF (override → balance-sheet): FCF-derived criteria neutralized to 0.
+    const cof = computeBreakdown(blankRow({ ticker: 'COF', industry: 'Credit Services', fcfYieldPercent: 6, trailingPE: 10 }));
+    expect(cof.fcfYieldLevel).toBe(0);
+    expect(cof.earningsQuality).toBe(0);
+    // SPGI (override → asset-light): FCF-derived criteria SCORED (was neutralized pre-Phase-5).
+    const spgi = computeBreakdown(blankRow({ ticker: 'SPGI', industry: 'Financial Data & Stock Exchanges', fcfYieldPercent: 6, trailingPE: 10 }));
+    expect(spgi.fcfYieldLevel).toBe(1); // 6% > 5% → +1, no longer neutralized
   });
 });
 

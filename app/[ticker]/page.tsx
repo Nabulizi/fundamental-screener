@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { buildProvider, buildValuationProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { parseTickers } from '@/lib/tickers';
-import { scoreRow, isFinancialIndustry, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
+import { scoreRow, isBalanceSheetFinancial, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import { getCachedValuation, setCachedValuation } from '@/lib/valuationCache';
 import { computeDrivers, type ValuationProfile, type ValuationProvider } from '@/lib/valuation';
 import {
@@ -121,7 +121,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         marketCap={row.marketCap}
         currency={row.currency}
         revenueGrowthTTM={row.revenueGrowthTTM}
-        isFinancial={isFinancialIndustry(row.industry)}
+        isFinancial={isBalanceSheetFinancial(row.ticker, row.industry)}
         profile={profile}
       />
 

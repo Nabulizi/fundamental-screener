@@ -42,7 +42,11 @@ and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`)
 - `lib/scoring.ts` — weighted composite scoring (12 criteria, 3 tier weights),
   split into a Strength Score (0–21) and Risk Score (0–20). Pure functions:
   `computeBreakdown`, `computeScores`, `scoreRow`, `isDisqualified`, `isCrowded`,
-  `tierFor`, plus `isCyclicalIndustry`/`isFinancialIndustry`. Neutral tiers:
+  `tierFor`, plus `isCyclicalIndustry`, and the ticker-aware
+  `classifyFinancialModel(ticker, industry)` / `isBalanceSheetFinancial` (which
+  wrap the `isFinancialIndustry` regex with curated overrides — the single
+  predicate the scorecard neutralization AND the detail-page DCF gate share).
+  Neutral tiers:
   `'strong' | 'moderate' | 'weak'`. `totalScore` (strength − risk) is retained
   as a convenience.
 - `lib/snapshotStore.ts` — append-only JSONL scan history (`data/snapshots.jsonl`,
