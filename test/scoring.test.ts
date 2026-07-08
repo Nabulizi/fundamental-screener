@@ -586,6 +586,21 @@ describe('classifyFinancialModel (Phase 5, ticker-aware)', () => {
     expect(isBalanceSheetFinancial('AAPL', 'Technology')).toBe(false);
   });
 
+  it('isBalanceSheetFinancial predicate (the shared scoring + DCF-gate boundary Phase 4 relies on)', () => {
+    for (const t of ['COF', 'DFS', 'AXP', 'SYF', 'ALLY']) {
+      expect(isBalanceSheetFinancial(t, 'Credit Services'), t).toBe(true);
+    }
+    const notGated: [string, string][] = [
+      ['V', 'Credit Services'], ['MA', 'Credit Services'],
+      ['SPGI', 'Financial Data & Stock Exchanges'], ['CME', 'Financial Data & Stock Exchanges'],
+      ['ICE', 'Financial Data & Stock Exchanges'], ['NDAQ', 'Financial Data & Stock Exchanges'],
+      ['BLK', 'Asset Management'], ['TROW', 'Asset Management'],
+    ];
+    for (const [t, ind] of notGated) {
+      expect(isBalanceSheetFinancial(t, ind), t).toBe(false);
+    }
+  });
+
   it('changes neutralization: COF now gated, SPGI now scored (SCORING_VERSION bump)', () => {
     // COF (override → balance-sheet): FCF-derived criteria neutralized to 0.
     const cof = computeBreakdown(blankRow({ ticker: 'COF', industry: 'Credit Services', fcfYieldPercent: 6, trailingPE: 10 }));
@@ -1158,5 +1173,10 @@ describe('SCORING_VERSION', () => {
   it('is a positive integer (stamped into scan snapshots)', () => {
     expect(Number.isInteger(SCORING_VERSION)).toBe(true);
     expect(SCORING_VERSION).toBeGreaterThanOrEqual(3);
+  });
+  // Exact-pin: Phase 5 opened a new scoring era. Bump this alongside the constant
+  // whenever criteria/neutralization change — it catches an accidental no-bump.
+  it('is exactly 4 (the Phase 5 curated-financial-classifier era)', () => {
+    expect(SCORING_VERSION).toBe(4);
   });
 });

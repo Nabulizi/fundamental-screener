@@ -329,15 +329,14 @@ const CYCLICAL_PATTERNS = [
 // ALSO neutralized: P/FCF and EBITDA are economically meaningless for banks and
 // insurers, and providers feed noise for them (verified live: Finnhub returns
 // a P/FCF of ~6 for JPM, i.e. a 16.7% "FCF yield").
-// Known limitation: this gate is industry-LABEL based, so it can't classify by
-// economic business model — and both the scorecard's FCF neutralization AND the
-// detail-page DCF gate depend on it. Consequences: card lenders (COF/DFS) can
-// slip through and show a DCF when their label overlaps payment networks (V/MA,
-// which correctly should NOT gate); conversely capital-markets/asset-management
-// names (BLK, exchanges, ratings/data) may be OVER-neutralized depending on the
-// provider's label. Broadening the regex makes the false-positives worse, not
-// better (asset-light fee businesses have real, DCF-able FCF). The real fix is a
-// curated business-model classification, not wider patterns — a Stage-2 change.
+// These patterns are the label-based FALLBACK for classifyFinancialModel (below):
+// they can't tell an economic business model from a sector label, so a curated
+// ticker-override layer sits in front of them. Card lenders labeled "Credit
+// Services" (which these miss) and asset-light names labeled financially (data,
+// exchanges, ratings, payment networks — real DCF-able FCF) are corrected by the
+// overrides. An UNRECOGNIZED-but-financial label falls through to here and is
+// treated conservatively as balance-sheet (neutralized) — hence the override
+// list must stay small and reviewed so genuine fee businesses aren't gated.
 const FINANCIAL_PATTERNS = [/financ/i, /\bbank/i, /insurance/i, /capital markets/i];
 
 // REITs carry structurally higher leverage (property-backed debt), so D/E is
@@ -396,7 +395,7 @@ export function classifyFinancialModel(
   ticker: string | null | undefined,
   industry: string | null | undefined
 ): FinancialModel {
-  const t = (ticker ?? '').toUpperCase();
+  const t = (ticker ?? '').trim().toUpperCase();
   if (OVERRIDE_BALANCE_SHEET.has(t)) return 'balance-sheet';
   if (OVERRIDE_ASSET_LIGHT.has(t)) return 'asset-light';
   return isFinancialIndustry(industry) ? 'balance-sheet' : 'non-financial';
