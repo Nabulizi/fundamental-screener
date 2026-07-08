@@ -140,6 +140,9 @@ export function marketImpliedGrowthPct(
   shared: SharedAssumptions
 ): { pct: number | null; outOfRange: boolean } {
   if (marketCap == null || fcf0 <= 0) return { pct: null, outOfRange: false };
+  // Guard years BEFORE impliedGrowth → intrinsicDcf: a cleared Horizon gives
+  // years=0 (Number('')), which intrinsicDcf throws on. Fail closed instead.
+  if (!Number.isFinite(shared.years) || shared.years < 1) return { pct: null, outOfRange: false };
   if (!scenarioAssumptionsValid(shared.costOfEquity, shared.terminalGrowth)) return { pct: null, outOfRange: false };
   const r = impliedGrowth(
     { fcf0, discountRate: shared.costOfEquity, terminalGrowth: shared.terminalGrowth, years: shared.years },

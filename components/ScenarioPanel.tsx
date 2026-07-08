@@ -61,7 +61,7 @@ export default function ScenarioPanel({ effectiveFcf, marketCap, currency, share
       <h2>Scenario range around market-implied FCF growth</h2>
       <p className="hint">
         {hasShares ? 'Value per share' : 'Equity value'} if <strong>FCF growth</strong> comes in below
-        (Bear), near (Base), or above (Bull) what today&rsquo;s price implies. Base starts at the
+        (Bear), near (Base), or above (Bull) what today&rsquo;s price implies. Base is initialized at the
         market-implied growth; all editable. Not a fair value, target, or recommendation — informational only.
       </p>
 
