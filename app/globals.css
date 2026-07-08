@@ -968,6 +968,14 @@ tr.row-weak:hover { background: var(--panel-2); }
 .metric-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .metric-value { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 
+.drivers { margin-top: 2rem; }
+.drivers h2 { margin: 0 0 0.6rem; font-size: 1.15rem; }
+.drivers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.driver { background: var(--panel); padding: 0.7rem 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.driver-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.driver-value { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.drivers .hint { margin-top: 0.6rem; }
+
 .dcf { margin-top: 2rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
 .dcf h2 { margin: 0 0 0.4rem; font-size: 1.15rem; }
 .dcf-base { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 1rem 0 0.25rem; }
