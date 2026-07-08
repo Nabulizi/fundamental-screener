@@ -171,7 +171,30 @@ describe('computeDrivers (Phase 3)', () => {
     expect(d.revenueCagr).not.toBeNull();
     expect(d.revenueCagr!).toBeGreaterThan(0);
     expect(d.shareCountChange).toBeCloseTo(-11.03, 1); // 15.00B / 16.86B − 1
-    expect(d.windowYears).toBe(4);
+    expect(d.revenueWindowYears).toBe(4);
+    expect(d.shareCountWindowYears).toBe(4);
+  });
+
+  it('tracks revenue and share-count windows separately when data differs', () => {
+    const y = (over: Partial<ValuationYear>): ValuationYear => ({
+      fiscalYear: 2020, fiscalPeriodEnd: null, revenue: null, operatingIncome: null,
+      operatingCashFlow: null, capex: null, freeCashFlow: null, stockBasedCompensation: null, sharesDiluted: null, ...over,
+    });
+    // Revenue every year 2020–2024 (span 4); diluted shares only 2023–2024 (span 1).
+    const p: ValuationProfile = {
+      ticker: 'T', fcfTtm: null, sharesOutstanding: null, netCash: null, source: 'finnhub-reported', retrievedAt: AT,
+      history: [
+        y({ fiscalYear: 2020, revenue: 1000 }),
+        y({ fiscalYear: 2021, revenue: 1100 }),
+        y({ fiscalYear: 2022, revenue: 1200 }),
+        y({ fiscalYear: 2023, revenue: 1300, sharesDiluted: 1000 }),
+        y({ fiscalYear: 2024, revenue: 1400, sharesDiluted: 1050 }),
+      ],
+    };
+    const d = computeDrivers(p);
+    expect(d.revenueWindowYears).toBe(4);      // 2020 → 2024
+    expect(d.shareCountWindowYears).toBe(1);   // 2023 → 2024
+    expect(d.shareCountChange).toBeCloseTo(5, 5); // 1050/1000 − 1
   });
 
   it('degrades each metric independently to null (never coerced)', () => {
@@ -201,6 +224,7 @@ describe('computeDrivers (Phase 3)', () => {
     expect(d.revenueCagr).toBeNull();
     expect(d.operatingMargin).toBeNull();
     expect(d.shareCountChange).toBeNull();
-    expect(d.windowYears).toBeNull();
+    expect(d.revenueWindowYears).toBeNull();
+    expect(d.shareCountWindowYears).toBeNull();
   });
 });

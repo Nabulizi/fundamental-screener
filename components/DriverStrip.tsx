@@ -5,15 +5,17 @@ import type { Drivers } from '@/lib/valuation';
 // language — just the numbers, each degrading to N/A on its own. Context for the
 // reverse-DCF (does the implied growth look achievable?), the user judges.
 export default function DriverStrip({ drivers }: { drivers: Drivers }) {
-  const win = drivers.windowYears ? ` (~${drivers.windowYears}y)` : '';
+  // Revenue and share data can span different usable windows — label each with its own.
+  const revWin = drivers.revenueWindowYears ? ` (~${drivers.revenueWindowYears}y)` : '';
+  const shWin = drivers.shareCountWindowYears ? ` (~${drivers.shareCountWindowYears}y)` : '';
   // formatReturn is signed (+/−) for the directional metrics; formatPercent for ratios.
   const items: [string, string][] = [
-    [`Revenue CAGR${win}`, formatReturn(drivers.revenueCagr)],
+    [`Revenue CAGR${revWin}`, formatReturn(drivers.revenueCagr)],
     ['Operating margin', formatPercent(drivers.operatingMargin)],
     ['FCF margin', formatPercent(drivers.fcfMargin)],
     ['Capex / revenue', formatPercent(drivers.capexIntensity)],
     ['SBC / revenue', formatPercent(drivers.sbcPctRevenue)],
-    [`Diluted shares Δ${win}`, formatReturn(drivers.shareCountChange)],
+    [`Diluted shares Δ${shWin}`, formatReturn(drivers.shareCountChange)],
   ];
 
   return (
