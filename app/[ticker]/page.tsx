@@ -124,6 +124,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         isFinancial={isBalanceSheetFinancial(row.ticker, row.industry)}
         profile={profile}
         sharesOutstanding={profile?.sharesOutstanding ?? null}
+        drivers={drivers}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>
