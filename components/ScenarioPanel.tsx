@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { computeScenarios, isInvertedRange, SCENARIO_PRESETS, type ScenarioLabel } from '@/lib/dcf';
+import { computeScenarios, isInvertedRange, scenarioInputsValid, SCENARIO_PRESETS, type ScenarioLabel } from '@/lib/dcf';
 import { formatCurrency, formatMarketCap } from '@/lib/format';
 
 interface Props {
@@ -29,8 +29,10 @@ export default function ScenarioPanel({ effectiveFcf, currency, shares }: Props)
 
   const setGrowth = (k: ScenarioLabel, v: number) => setGrowths((g) => ({ ...g, [k]: v }));
 
-  // Terminal must sit ≥100bps below cost of equity (r≈g explodes the terminal value).
-  const valid = terminal <= coe - 1;
+  // Fail closed: validate every raw input (finite, in-range, integer horizon,
+  // ≥100bps terminal spread) BEFORE computing — a blank/0 horizon would otherwise
+  // make years=0 and throw inside intrinsicDcf during render.
+  const valid = scenarioInputsValid(growths, coe, terminal, years);
   const hasShares = shares != null && shares > 0;
 
   const results = valid
@@ -81,7 +83,10 @@ export default function ScenarioPanel({ effectiveFcf, currency, shares }: Props)
       </div>
 
       {!valid ? (
-        <p className="dcf-warn">Terminal growth must be at least 1% below cost of equity.</p>
+        <p className="dcf-warn">
+          Assumptions out of range — FCF growth −20…40%, cost of equity 5…20%, terminal 0…6% (≥1%
+          below cost of equity), horizon 5…15 (whole years).
+        </p>
       ) : inverted ? (
         <p className="scenario-note">These assumptions produce an inverted scenario set.</p>
       ) : hasShares && results ? (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { intrinsicDcf, impliedGrowth, computeScenarios, isInvertedRange, scenarioAssumptionsValid } from '@/lib/dcf';
+import { intrinsicDcf, impliedGrowth, computeScenarios, isInvertedRange, scenarioAssumptionsValid, scenarioInputsValid } from '@/lib/dcf';
 
 describe('intrinsicDcf', () => {
   it('matches a hand-computed two-stage DCF', () => {
@@ -75,5 +75,31 @@ describe('computeScenarios / isInvertedRange (Phase 4)', () => {
     expect(scenarioAssumptionsValid(0.05, 0.049)).toBe(false); // 10bps spread → invalid
     expect(scenarioAssumptionsValid(0.11, 0.105)).toBe(false); // 50bps spread → invalid
     expect(() => computeScenarios(1000, growths, { costOfEquity: 0.05, terminalGrowth: 0.049, years: 10 }, 200)).toThrow();
+  });
+});
+
+describe('scenarioInputsValid (fail-closed guard)', () => {
+  const g = { bear: 3, base: 8, bull: 15 };
+  it('accepts the defaults', () => {
+    expect(scenarioInputsValid(g, 11, 3, 10)).toBe(true);
+  });
+  it('rejects a blank/0 or non-integer horizon (the crash case)', () => {
+    expect(scenarioInputsValid(g, 11, 3, 0)).toBe(false);   // blank field → Number('')=0
+    expect(scenarioInputsValid(g, 11, 3, 4)).toBe(false);   // below 5
+    expect(scenarioInputsValid(g, 11, 3, 16)).toBe(false);  // above 15
+    expect(scenarioInputsValid(g, 11, 3, 10.5)).toBe(false); // non-integer
+  });
+  it('rejects out-of-range growth / cost of equity / terminal', () => {
+    expect(scenarioInputsValid({ ...g, bull: 41 }, 11, 3, 10)).toBe(false);
+    expect(scenarioInputsValid({ ...g, bear: -21 }, 11, 3, 10)).toBe(false);
+    expect(scenarioInputsValid(g, 21, 3, 10)).toBe(false);  // CoE > 20
+    expect(scenarioInputsValid(g, 4, 3, 10)).toBe(false);   // CoE < 5
+    expect(scenarioInputsValid(g, 11, 7, 10)).toBe(false);  // terminal > 6
+    expect(scenarioInputsValid(g, 11, 10.5, 10)).toBe(false); // terminal within 100bps of CoE
+  });
+  it('rejects non-finite values', () => {
+    expect(scenarioInputsValid(g, NaN, 3, 10)).toBe(false);
+    expect(scenarioInputsValid({ ...g, base: NaN }, 11, 3, 10)).toBe(false);
+    expect(scenarioInputsValid(g, 11, 3, Number.POSITIVE_INFINITY)).toBe(false);
   });
 });

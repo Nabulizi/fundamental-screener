@@ -115,6 +115,40 @@ export function scenarioAssumptionsValid(costOfEquity: number, terminalGrowth: n
   return terminalGrowth <= costOfEquity - TERMINAL_SPREAD;
 }
 
+// Editable bounds in PERCENT / year units (what the UI holds). Years is a whole number.
+export const SCENARIO_BOUNDS = {
+  fcfGrowth: { min: -20, max: 40 },
+  costOfEquity: { min: 5, max: 20 },
+  terminalGrowth: { min: 0, max: 6 },
+  years: { min: 5, max: 15 },
+} as const;
+
+/**
+ * Fail-closed validation of the UI's raw scenario inputs (percent units). Guards
+ * non-finite values (blank/partial fields), out-of-range values, a non-integer or
+ * out-of-range horizon, and the ≥100 bps terminal spread — so the render path
+ * never feeds `computeScenarios`/`intrinsicDcf` a value that would throw.
+ */
+export function scenarioInputsValid(
+  growthsPct: Record<ScenarioLabel, number>,
+  costOfEquityPct: number,
+  terminalGrowthPct: number,
+  years: number
+): boolean {
+  const nums = [growthsPct.bear, growthsPct.base, growthsPct.bull, costOfEquityPct, terminalGrowthPct, years];
+  if (!nums.every((n) => Number.isFinite(n))) return false;
+  const within = (v: number, b: { min: number; max: number }) => v >= b.min && v <= b.max;
+  return (
+    within(growthsPct.bear, SCENARIO_BOUNDS.fcfGrowth) &&
+    within(growthsPct.base, SCENARIO_BOUNDS.fcfGrowth) &&
+    within(growthsPct.bull, SCENARIO_BOUNDS.fcfGrowth) &&
+    within(costOfEquityPct, SCENARIO_BOUNDS.costOfEquity) &&
+    within(terminalGrowthPct, SCENARIO_BOUNDS.terminalGrowth) &&
+    Number.isInteger(years) && within(years, SCENARIO_BOUNDS.years) &&
+    terminalGrowthPct <= costOfEquityPct - 1 // ≥100 bps below CoE (percent units)
+  );
+}
+
 /**
  * Compute the three scenarios in fixed bear→base→bull order (never sorted).
  * @throws if the shared assumptions violate the terminal-spread guard — callers
