@@ -151,6 +151,11 @@ export function scenarioInputsValid(
 
 /**
  * Compute the three scenarios in fixed bear→base→bull order (never sorted).
+ *
+ * Callers must pre-validate raw UI inputs with `scenarioInputsValid` first — this
+ * function only re-checks the terminal spread, NOT ranges, finiteness, or the
+ * horizon (a `years < 1` reaches `intrinsicDcf` and throws).
+ *
  * @throws if the shared assumptions violate the terminal-spread guard — callers
  * validate first and show a warning rather than render a misleading value.
  */
