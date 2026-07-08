@@ -11,6 +11,7 @@ import {
 import ValuationPanel from '@/components/ValuationPanel';
 import DriverStrip from '@/components/DriverStrip';
 import FundamentalsTable from '@/components/FundamentalsTable';
+import PeerComparison from '@/components/PeerComparison';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -131,6 +132,8 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         sharesOutstanding={profile?.sharesOutstanding ?? null}
         drivers={drivers}
       />
+
+      <PeerComparison selected={row} />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>
     </Shell>
