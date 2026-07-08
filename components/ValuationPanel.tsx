@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { fcfBaseOptions, defaultFcfBaseKey, type FcfBaseKey, type ValuationProfile } from '@/lib/valuation';
+import { fcfBaseOptions, defaultFcfBaseKey, resolveFcfBase, type FcfBaseKey, type ValuationProfile } from '@/lib/valuation';
 import { formatMarketCap } from '@/lib/format';
 import DcfPanel from './DcfPanel';
 import ScenarioPanel from './ScenarioPanel';
@@ -42,7 +42,8 @@ export default function ValuationPanel({
   }
 
   const options = fcfBaseOptions(profile, fcf0);
-  if (options.length === 0) {
+  const resolved = resolveFcfBase(options, baseKey, customFcf);
+  if (!resolved) {
     return (
       <section className="dcf">
         <h2>What&rsquo;s priced in? (reverse DCF)</h2>
@@ -54,8 +55,7 @@ export default function ValuationPanel({
     );
   }
 
-  const selectedOpt = options.find((o) => o.key === baseKey) ?? options[0];
-  const effectiveFcf = customFcf ?? selectedOpt.value;
+  const { option: selectedOpt, effectiveFcf } = resolved;
   const hasSelector = options.length > 1;
   const chooseBase = (k: FcfBaseKey) => { setBaseKey(k); setCustomFcf(null); };
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, computeDrivers,
+  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, computeDrivers, resolveFcfBase,
   type ValuationProfile, type ValuationYear
 } from '@/lib/valuation';
 import { parseFinancialsReported } from '@/lib/valuationProvider';
@@ -226,5 +226,27 @@ describe('computeDrivers (Phase 3)', () => {
     expect(d.shareCountChange).toBeNull();
     expect(d.revenueWindowYears).toBeNull();
     expect(d.shareCountWindowYears).toBeNull();
+  });
+});
+
+describe('resolveFcfBase (shared effective-FCF selection)', () => {
+  const opts = fcfBaseOptions(profileWithFcf([10, 20, 30]), 100); // [ttm(100), avg3(20), avg5(20)]
+  it('returns the selected option and its value', () => {
+    const r = resolveFcfBase(opts, 'avg3', null)!;
+    expect(r.option.key).toBe('avg3');
+    expect(r.effectiveFcf).toBe(20);
+  });
+  it('a finite custom value overrides the preset', () => {
+    expect(resolveFcfBase(opts, 'ttm', 555)!.effectiveFcf).toBe(555);
+  });
+  it('ignores a non-finite custom value (falls back to the preset)', () => {
+    expect(resolveFcfBase(opts, 'ttm', NaN)!.effectiveFcf).toBe(100);
+  });
+  it('falls back to the first option when the key is absent', () => {
+    const r = resolveFcfBase(fcfBaseOptions(profileWithFcf([10, 20, 30]), null), 'ttm', null)!; // no ttm option
+    expect(r.option.key).toBe('avg3');
+  });
+  it('returns null when there is no usable base', () => {
+    expect(resolveFcfBase([], 'ttm', null)).toBeNull();
   });
 });

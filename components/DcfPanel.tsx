@@ -23,14 +23,14 @@ interface Props {
 // ponytail: effectiveFcf is equity/levered FCF, so the DCF value is an equity
 // value compared directly to market cap; netCash stays 0 (see lib/dcf.ts).
 export default function DcfPanel({ effectiveFcf, baseLabel, marketCap, currency, revenueGrowthTTM }: Props) {
-  const [wacc, setWacc] = useState(11);
+  const [discountRate, setDiscountRate] = useState(11);
   const [terminal, setTerminal] = useState(3);
   const [years, setYears] = useState(10);
 
-  const valid = wacc / 100 > terminal / 100 && marketCap != null;
+  const valid = discountRate / 100 > terminal / 100 && marketCap != null;
   const implied = valid
     ? impliedGrowth(
-        { fcf0: effectiveFcf, discountRate: wacc / 100, terminalGrowth: terminal / 100, years },
+        { fcf0: effectiveFcf, discountRate: discountRate / 100, terminalGrowth: terminal / 100, years },
         marketCap as number
       )
     : null;
@@ -54,7 +54,7 @@ export default function DcfPanel({ effectiveFcf, baseLabel, marketCap, currency,
       </p>
 
       <div className="dcf-inputs">
-        <Slider label="Discount rate" value={wacc} set={setWacc} min={5} max={20} suffix="%" />
+        <Slider label="Discount rate" value={discountRate} set={setDiscountRate} min={5} max={20} suffix="%" />
         <Slider label="Terminal growth" value={terminal} set={setTerminal} min={0} max={6} suffix="%" />
         <Slider label="Horizon" value={years} set={setYears} min={5} max={15} suffix="yr" />
       </div>

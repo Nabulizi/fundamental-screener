@@ -117,6 +117,24 @@ export function defaultFcfBaseKey(profile: ValuationProfile | null): FcfBaseKey 
   return usableFcfValues(profile).length >= 3 ? 'avg3' : 'ttm';
 }
 
+/**
+ * Resolve the single effective FCF base shared by the reverse-DCF and scenario
+ * panels. Returns null when there is no usable base (caller shows the "no base"
+ * state). A user-typed customFcf overrides the selected preset, but only when it
+ * is finite (blank/partial input falls back to the preset value). Falls back to
+ * the first option when baseKey isn't present.
+ */
+export function resolveFcfBase(
+  options: FcfBaseOption[],
+  baseKey: FcfBaseKey,
+  customFcf: number | null
+): { option: FcfBaseOption; effectiveFcf: number } | null {
+  if (options.length === 0) return null;
+  const option = options.find((o) => o.key === baseKey) ?? options[0];
+  const effectiveFcf = customFcf != null && Number.isFinite(customFcf) ? customFcf : option.value;
+  return { option, effectiveFcf };
+}
+
 // --- Driver context (Phase 3) -----------------------------------------------
 
 export interface Drivers {
