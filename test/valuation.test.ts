@@ -140,4 +140,19 @@ describe('fcfBaseOptions / defaultFcfBaseKey (Phase 2 availability rules)', () =
     const avg3 = fcfBaseOptions(profileWithFcf([10, null, 30]), 5).find((o) => o.key === 'avg3')!;
     expect(avg3.value).toBe(20); // (30+10)/2, not (30+0+10)/3
   });
+
+  it('negative/absent TTM does not hide a positive normalized average (Phase 2 bug fix)', () => {
+    // TTM null but positive 3-yr history → avg3 available, no TTM option.
+    const nullTtm = fcfBaseOptions(profileWithFcf([10, 20, 30]), null);
+    expect(nullTtm.map((o) => o.key)).toEqual(['avg3', 'avg5']);
+    expect(nullTtm[0].value).toBe(20);
+    // TTM negative but positive average → still offers avg3, drops TTM.
+    const negTtm = fcfBaseOptions(profileWithFcf([10, 20]), -5);
+    expect(negTtm.map((o) => o.key)).toEqual(['avg3']);
+  });
+
+  it('excludes a base whose value is not positive (no unusable negative base)', () => {
+    expect(fcfBaseOptions(profileWithFcf([-100, -50]), null)).toEqual([]); // avg negative → dropped
+    expect(fcfBaseOptions(null, -5)).toEqual([]); // negative TTM, no history → no base at all
+  });
 });
