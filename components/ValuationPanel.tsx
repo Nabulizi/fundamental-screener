@@ -93,7 +93,9 @@ export default function ValuationPanel({
             currency={currency}
             revenueGrowthTTM={revenueGrowthTTM}
           />
-          <ScenarioPanel effectiveFcf={effectiveFcf} currency={currency} shares={sharesOutstanding} />
+          {/* key by the base so switching FCF base re-seeds the scenarios around
+              the new market-implied anchor. */}
+          <ScenarioPanel key={effectiveFcf} effectiveFcf={effectiveFcf} marketCap={marketCap} currency={currency} shares={sharesOutstanding} />
         </>
       ) : (
         <section className="dcf">

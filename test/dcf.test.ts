@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { intrinsicDcf, impliedGrowth, computeScenarios, isInvertedRange, scenarioAssumptionsValid, scenarioInputsValid } from '@/lib/dcf';
+import { intrinsicDcf, impliedGrowth, computeScenarios, isInvertedRange, scenarioAssumptionsValid, scenarioInputsValid, marketImpliedGrowthPct, seedScenarioGrowths } from '@/lib/dcf';
 
 describe('intrinsicDcf', () => {
   it('matches a hand-computed two-stage DCF', () => {
@@ -90,7 +90,8 @@ describe('scenarioInputsValid (fail-closed guard)', () => {
     expect(scenarioInputsValid(g, 11, 3, 10.5)).toBe(false); // non-integer
   });
   it('rejects out-of-range growth / cost of equity / terminal', () => {
-    expect(scenarioInputsValid({ ...g, bull: 41 }, 11, 3, 10)).toBe(false);
+    expect(scenarioInputsValid({ ...g, bull: 101 }, 11, 3, 10)).toBe(false); // max is 100
+    expect(scenarioInputsValid({ ...g, bull: 40 }, 11, 3, 10)).toBe(true);   // 40 now in range
     expect(scenarioInputsValid({ ...g, bear: -21 }, 11, 3, 10)).toBe(false);
     expect(scenarioInputsValid(g, 21, 3, 10)).toBe(false);  // CoE > 20
     expect(scenarioInputsValid(g, 4, 3, 10)).toBe(false);   // CoE < 5
@@ -101,5 +102,42 @@ describe('scenarioInputsValid (fail-closed guard)', () => {
     expect(scenarioInputsValid(g, NaN, 3, 10)).toBe(false);
     expect(scenarioInputsValid({ ...g, base: NaN }, 11, 3, 10)).toBe(false);
     expect(scenarioInputsValid(g, 11, 3, Number.POSITIVE_INFINITY)).toBe(false);
+  });
+});
+
+describe('marketImpliedGrowthPct / seedScenarioGrowths (Phase 4 anchoring)', () => {
+  const shared = { costOfEquity: 0.11, terminalGrowth: 0.03, years: 10 };
+
+  it('TSLA-like: tiny FCF base under a huge market cap seeds Base near the implied anchor, not 8%', () => {
+    const { pct, outOfRange } = marketImpliedGrowthPct(4.7e9, 1.5e12, shared);
+    expect(outOfRange).toBe(false);
+    expect(pct!).toBeGreaterThan(30); // ~49% — the market's number, not a universal 8
+    const g = seedScenarioGrowths(pct);
+    expect(g.base).toBeGreaterThan(30);
+    expect(g.bear).toBe(g.base - 10);
+    expect(g.bull).toBe(g.base + 10);
+  });
+
+  it('mature stock: a reasonable market cap round-trips to a single-digit anchor', () => {
+    const marketCap = intrinsicDcf({ fcf0: 100, growth: 0.06, discountRate: 0.11, terminalGrowth: 0.03, years: 10 }).equityValue;
+    const { pct } = marketImpliedGrowthPct(100, marketCap, shared);
+    expect(pct!).toBeCloseTo(6, 0);
+    expect(seedScenarioGrowths(pct).base).toBe(6);
+  });
+
+  it('implied above the range is clamped to 100 and flagged', () => {
+    const { pct, outOfRange } = marketImpliedGrowthPct(1, 1e15, shared);
+    expect(outOfRange).toBe(true);
+    expect(pct).toBe(100);
+    const g = seedScenarioGrowths(pct);
+    expect(g.base).toBe(100);
+    expect(g.bull).toBe(100); // clamp(110)
+  });
+
+  it('no anchor → neutral 3/8/15 fallback; null inputs → null', () => {
+    expect(seedScenarioGrowths(null)).toEqual({ bear: 3, base: 8, bull: 15 });
+    expect(marketImpliedGrowthPct(100, null, shared).pct).toBeNull();
+    expect(marketImpliedGrowthPct(-5, 1e9, shared).pct).toBeNull();
+    expect(marketImpliedGrowthPct(100, 1e9, { costOfEquity: 0.05, terminalGrowth: 0.049, years: 10 }).pct).toBeNull();
   });
 });

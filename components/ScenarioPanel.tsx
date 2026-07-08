@@ -1,12 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { computeScenarios, isInvertedRange, scenarioInputsValid, SCENARIO_PRESETS, type ScenarioLabel } from '@/lib/dcf';
+import {
+  computeScenarios, isInvertedRange, scenarioInputsValid, marketImpliedGrowthPct, seedScenarioGrowths,
+  SCENARIO_PRESETS, type ScenarioLabel,
+} from '@/lib/dcf';
 import { formatCurrency, formatMarketCap } from '@/lib/format';
 
 interface Props {
   /** The selected FCF base (raw currency units), guaranteed positive by ValuationPanel. */
   effectiveFcf: number;
+  /** Market cap — the reference the implied-growth anchor is solved against. */
+  marketCap: number | null;
   currency: string | null;
   /** Latest annual diluted weighted-average shares, or null when unavailable. */
   shares: number | null;
@@ -15,23 +20,26 @@ interface Props {
 const LABELS: Record<ScenarioLabel, string> = { bear: 'Bear', base: 'Base', bull: 'Bull' };
 const pct = (d: number) => Math.round(d * 100);
 
-// Assumption-driven value-per-share RANGE — informational only, never a fair
-// value or target. Per-scenario variable is FCF growth ONLY; cost of equity,
-// terminal growth, and horizon are shared (company-level). No upside/downside,
-// no current-price comparison, no red/green verdicts.
-export default function ScenarioPanel({ effectiveFcf, currency, shares }: Props) {
-  const [growths, setGrowths] = useState({
-    bear: pct(SCENARIO_PRESETS.growths.bear), base: pct(SCENARIO_PRESETS.growths.base), bull: pct(SCENARIO_PRESETS.growths.bull),
-  });
+// Assumption-driven value-per-share RANGE, anchored to the reverse-DCF
+// market-implied FCF growth: Base starts at what's priced in, Bear/Bull are
+// ±10pp around it. Answers "what if FCF growth is below / near / above what the
+// market already implies?" No upside/downside, current-price comparison, or
+// green/red verdicts. Parent keys this by effectiveFcf, so a base change re-seeds.
+export default function ScenarioPanel({ effectiveFcf, marketCap, currency, shares }: Props) {
+  // Seed the growths around the anchor computed with the DEFAULT shared assumptions.
+  const seedImplied = marketImpliedGrowthPct(effectiveFcf, marketCap, SCENARIO_PRESETS.shared);
+  const [growths, setGrowths] = useState(() => seedScenarioGrowths(seedImplied.pct));
   const [coe, setCoe] = useState(pct(SCENARIO_PRESETS.shared.costOfEquity));
   const [terminal, setTerminal] = useState(pct(SCENARIO_PRESETS.shared.terminalGrowth));
   const [years, setYears] = useState(SCENARIO_PRESETS.shared.years);
 
   const setGrowth = (k: ScenarioLabel, v: number) => setGrowths((g) => ({ ...g, [k]: v }));
 
-  // Fail closed: validate every raw input (finite, in-range, integer horizon,
-  // ≥100bps terminal spread) BEFORE computing — a blank/0 horizon would otherwise
-  // make years=0 and throw inside intrinsicDcf during render.
+  // Live anchor uses the SCENARIO's own shared assumptions (not reverse-DCF state).
+  const anchor = marketImpliedGrowthPct(effectiveFcf, marketCap, {
+    costOfEquity: coe / 100, terminalGrowth: terminal / 100, years,
+  });
+
   const valid = scenarioInputsValid(growths, coe, terminal, years);
   const hasShares = shares != null && shares > 0;
 
@@ -50,12 +58,20 @@ export default function ScenarioPanel({ effectiveFcf, currency, shares }: Props)
 
   return (
     <section className="scenario">
-      <h2>Scenario range (assumption-driven)</h2>
+      <h2>Scenario range around market-implied FCF growth</h2>
       <p className="hint">
-        {hasShares ? 'Value per share' : 'Equity value'} under Bear / Base / Bull{' '}
-        <strong>FCF-growth</strong> assumptions, off the selected FCF base. Not a fair value, price
-        target, or recommendation — informational only.
+        {hasShares ? 'Value per share' : 'Equity value'} if <strong>FCF growth</strong> comes in below
+        (Bear), near (Base), or above (Bull) what today&rsquo;s price implies. Base starts at the
+        market-implied growth; all editable. Not a fair value, target, or recommendation — informational only.
       </p>
+
+      {anchor.pct != null && (
+        <p className="scenario-note">
+          Market-implied FCF growth at these shared assumptions:{' '}
+          <strong>{anchor.outOfRange ? '>100' : anchor.pct.toFixed(1)}%/yr</strong>
+          {anchor.outOfRange && ' — above the editable scenario range; Base is capped at 100%.'}
+        </p>
+      )}
 
       <div className="scenario-cols">
         {(['bear', 'base', 'bull'] as ScenarioLabel[]).map((label) => {
@@ -66,7 +82,7 @@ export default function ScenarioPanel({ effectiveFcf, currency, shares }: Props)
               <label className="scenario-growth">
                 FCF growth
                 <span>
-                  <input type="number" value={growths[label]} min={-20} max={40}
+                  <input type="number" value={growths[label]} min={-20} max={100}
                     onChange={(e) => setGrowth(label, Number(e.target.value))} />%/yr
                 </span>
               </label>
@@ -84,7 +100,7 @@ export default function ScenarioPanel({ effectiveFcf, currency, shares }: Props)
 
       {!valid ? (
         <p className="dcf-warn">
-          Assumptions out of range — FCF growth −20…40%, cost of equity 5…20%, terminal 0…6% (≥1%
+          Assumptions out of range — FCF growth −20…100%, cost of equity 5…20%, terminal 0…6% (≥1%
           below cost of equity), horizon 5…15 (whole years).
         </p>
       ) : inverted ? (

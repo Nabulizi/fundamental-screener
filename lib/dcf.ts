@@ -115,13 +115,51 @@ export function scenarioAssumptionsValid(costOfEquity: number, terminalGrowth: n
   return terminalGrowth <= costOfEquity - TERMINAL_SPREAD;
 }
 
-// Editable bounds in PERCENT / year units (what the UI holds). Years is a whole number.
+// Editable bounds in PERCENT / year units (what the UI holds). Years is a whole
+// number. FCF-growth max is 100 to match impliedGrowth's solver range, so the
+// scenarios can bracket a high market-implied anchor (e.g. TSLA ~49%).
 export const SCENARIO_BOUNDS = {
-  fcfGrowth: { min: -20, max: 40 },
+  fcfGrowth: { min: -20, max: 100 },
   costOfEquity: { min: 5, max: 20 },
   terminalGrowth: { min: 0, max: 6 },
   years: { min: 5, max: 15 },
 } as const;
+
+const clampGrowthPct = (v: number) =>
+  Math.max(SCENARIO_BOUNDS.fcfGrowth.min, Math.min(SCENARIO_BOUNDS.fcfGrowth.max, v));
+
+/**
+ * The reverse-DCF market-implied FCF growth (percent), computed from the SAME
+ * effectiveFcf + market cap + shared assumptions the scenario panel uses — the
+ * market-consistent reference the scenarios anchor to. Null when it can't be
+ * computed (no market cap, non-positive FCF, or invalid assumptions).
+ */
+export function marketImpliedGrowthPct(
+  fcf0: number,
+  marketCap: number | null,
+  shared: SharedAssumptions
+): { pct: number | null; outOfRange: boolean } {
+  if (marketCap == null || fcf0 <= 0) return { pct: null, outOfRange: false };
+  if (!scenarioAssumptionsValid(shared.costOfEquity, shared.terminalGrowth)) return { pct: null, outOfRange: false };
+  const r = impliedGrowth(
+    { fcf0, discountRate: shared.costOfEquity, terminalGrowth: shared.terminalGrowth, years: shared.years },
+    marketCap
+  );
+  return { pct: r.growth * 100, outOfRange: r.outOfRange };
+}
+
+/**
+ * Seed Bear/Base/Bull FCF growth (percent) AROUND the market-implied anchor:
+ * Base = implied, Bear = implied − 10pp, Bull = implied + 10pp, each clamped to
+ * bounds. Falls back to a neutral 3/8/15 spread when there's no implied anchor.
+ */
+export function seedScenarioGrowths(impliedPct: number | null): Record<ScenarioLabel, number> {
+  if (impliedPct == null) {
+    return { bear: 3, base: 8, bull: 15 }; // no market anchor → neutral spread
+  }
+  const base = clampGrowthPct(Math.round(impliedPct));
+  return { bear: clampGrowthPct(base - 10), base, bull: clampGrowthPct(base + 10) };
+}
 
 /**
  * Fail-closed validation of the UI's raw scenario inputs (percent units). Guards
