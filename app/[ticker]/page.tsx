@@ -1,12 +1,22 @@
 import Link from 'next/link';
-import { buildProvider, cacheTtlSeconds } from '@/lib/buildProvider';
+import { buildProvider, buildValuationProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isFinancialIndustry, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
+import { getCachedValuation, setCachedValuation } from '@/lib/valuationCache';
+import type { ValuationProfile, ValuationProvider } from '@/lib/valuation';
 import {
   formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, formatRatio
 } from '@/lib/format';
 import DcfPanel from '@/components/DcfPanel';
+
+async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
+  const cached = getCachedValuation(ticker);
+  if (cached) return cached;
+  const profile = await provider.fetchValuationProfile(ticker);
+  setCachedValuation(ticker, profile, ttlSeconds);
+  return profile;
+}
 
 // SERVER-ONLY: builds the provider from env keys, same path as /api/scan.
 export const runtime = 'nodejs';
@@ -30,20 +40,29 @@ export default async function TickerPage({ params }: { params: { ticker: string 
     return <Shell><p className="message">Server is not configured: FINNHUB_API_KEY is missing. See README.md.</p></Shell>;
   }
 
-  // scan.ts swallows per-ticker provider errors, but cache/circuit-breaker bugs
-  // could still throw — the app has no error boundary, so catch here (mirrors
-  // the try/catch in app/api/scan/route.ts) rather than fall to Next's default.
-  let rows, errors;
-  try {
-    ({ rows, errors } = await scanTickers([symbol], provider, { ttlSeconds: cacheTtlSeconds() }));
-  } catch {
+  const ttl = cacheTtlSeconds();
+  const valuationProvider = buildValuationProvider();
+
+  // Scorecard row (required) + valuation history (optional) in parallel.
+  // allSettled so a failing/absent valuation fetch can NEVER take down the page:
+  // the panel falls back to today's TTM-only behavior. scan.ts already swallows
+  // per-ticker provider errors; this also catches cache/circuit-breaker throws
+  // (the app has no error boundary).
+  const [scanSettled, valSettled] = await Promise.allSettled([
+    scanTickers([symbol], provider, { ttlSeconds: ttl }),
+    valuationProvider ? loadValuation(symbol, valuationProvider, ttl) : Promise.resolve(null),
+  ]);
+
+  if (scanSettled.status === 'rejected') {
     return <Shell><p className="message">Couldn&rsquo;t load {symbol} — unexpected server error.</p></Shell>;
   }
+  const { rows, errors } = scanSettled.value;
   const row = rows[0];
   if (!row) {
     const err = errors[0];
     return <Shell><p className="message">Couldn&rsquo;t load {symbol}{err ? ` — ${err.message}` : '.'}</p></Shell>;
   }
+  const profile = valSettled.status === 'fulfilled' ? valSettled.value : null;
 
   const scored = scoreRow(row);
   // Equity FCF yield is Price/FCF based (see types.ts), so absolute FCF ≈ marketCap × yield.
@@ -95,6 +114,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         currency={row.currency}
         revenueGrowthTTM={row.revenueGrowthTTM}
         isFinancial={isFinancialIndustry(row.industry)}
+        profile={profile}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>

@@ -970,6 +970,14 @@ tr.row-weak:hover { background: var(--panel-2); }
 
 .dcf { margin-top: 2rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
 .dcf h2 { margin: 0 0 0.4rem; font-size: 1.15rem; }
+.dcf-base { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 1rem 0 0.25rem; }
+.dcf-base-btns { display: inline-flex; gap: 0.35rem; }
+.dcf-base-btn { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.8rem; cursor: pointer; }
+.dcf-base-btn:hover { color: var(--text); }
+.dcf-base-btn.active { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border-color: #fbbf24; }
+.dcf-adjust { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--muted); }
+.dcf-adjust input { width: 11rem; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.4rem; font-variant-numeric: tabular-nums; }
+
 .dcf-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.9rem; margin: 1rem 0; }
 .dcf-slider { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.82rem; color: var(--muted); }
 .dcf-slider input { width: 100%; accent-color: #fbbf24; }

@@ -55,3 +55,56 @@ export function deriveFreeCashFlow(ocf: number | null, capex: number | null): nu
   if (ocf == null || capex == null) return null;
   return ocf - Math.abs(capex);
 }
+
+// --- Normalized FCF base (Phase 2) ------------------------------------------
+
+export type FcfBaseKey = 'ttm' | 'avg3' | 'avg5';
+
+export interface FcfBaseOption {
+  key: FcfBaseKey;
+  label: string;
+  value: number;
+  /** Number of annual years actually averaged (1 for TTM). */
+  yearsUsed: number;
+}
+
+/** Usable (non-null) annual FCF values, most-recent first. */
+export function usableFcfValues(profile: ValuationProfile | null): number[] {
+  if (!profile) return [];
+  return profile.history
+    .slice()
+    .reverse()
+    .map((y) => y.freeCashFlow)
+    .filter((v): v is number => v != null);
+}
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+/**
+ * FCF-base options honoring the roadmap availability rules:
+ *   - TTM  : available iff a current TTM FCF exists.
+ *   - 3Y avg: needs ≥2 usable annual years (averages up to 3), label the count.
+ *   - 5Y avg: needs ≥3 usable annual years (averages up to 5), label the count.
+ * Never coerces null→0; averages only usable years. Returns [] when nothing is
+ * usable (caller then behaves like the TTM-only panel).
+ */
+export function fcfBaseOptions(profile: ValuationProfile | null, ttm: number | null): FcfBaseOption[] {
+  const opts: FcfBaseOption[] = [];
+  if (ttm != null) opts.push({ key: 'ttm', label: 'TTM', value: ttm, yearsUsed: 1 });
+
+  const usable = usableFcfValues(profile);
+  if (usable.length >= 2) {
+    const n = Math.min(3, usable.length);
+    opts.push({ key: 'avg3', label: `3Y avg (${n} yr)`, value: mean(usable.slice(0, n)), yearsUsed: n });
+  }
+  if (usable.length >= 3) {
+    const n = Math.min(5, usable.length);
+    opts.push({ key: 'avg5', label: `5Y avg (${n} yr)`, value: mean(usable.slice(0, n)), yearsUsed: n });
+  }
+  return opts;
+}
+
+/** Default base: TTM until ≥3 usable annual years exist, then the 3Y average. */
+export function defaultFcfBaseKey(profile: ValuationProfile | null): FcfBaseKey {
+  return usableFcfValues(profile).length >= 3 ? 'avg3' : 'ttm';
+}
