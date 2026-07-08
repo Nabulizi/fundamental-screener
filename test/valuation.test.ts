@@ -1,8 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { deriveFreeCashFlow } from '@/lib/valuation';
+import {
+  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, type ValuationProfile
+} from '@/lib/valuation';
 import { parseFinancialsReported } from '@/lib/valuationProvider';
+
+// Build a profile from a list of annual FCF values (oldest → newest); null = missing year.
+function profileWithFcf(fcfs: (number | null)[]): ValuationProfile {
+  return {
+    ticker: 'T', fcfTtm: null, sharesOutstanding: null, netCash: null,
+    source: 'finnhub-reported', retrievedAt: '2026-01-01T00:00:00Z',
+    history: fcfs.map((fcf, i) => ({
+      fiscalYear: 2020 + i, fiscalPeriodEnd: null, revenue: null, operatingIncome: null,
+      operatingCashFlow: null, capex: null, freeCashFlow: fcf, stockBasedCompensation: null, sharesDiluted: null,
+    })),
+  };
+}
 
 function fixture(name: string): unknown {
   return JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/valuation/${name}`, import.meta.url)), 'utf8'));
@@ -93,5 +107,37 @@ describe('parseFinancialsReported — missing / partial data', () => {
     const p = parseFinancialsReported(raw, 'ZZZ', AT);
     expect(p.history).toHaveLength(1);
     expect(p.history[0].operatingCashFlow).toBe(111);
+  });
+});
+
+describe('fcfBaseOptions / defaultFcfBaseKey (Phase 2 availability rules)', () => {
+  it('TTM only when no usable history → no selector (behaves TTM-only)', () => {
+    expect(fcfBaseOptions(null, 5).map((o) => o.key)).toEqual(['ttm']);
+    expect(fcfBaseOptions(profileWithFcf([null, null]), 5).map((o) => o.key)).toEqual(['ttm']);
+    expect(defaultFcfBaseKey(null)).toBe('ttm');
+  });
+
+  it('3Y avg needs ≥2 usable years and labels the count', () => {
+    const opts = fcfBaseOptions(profileWithFcf([10, 20]), 5); // 2 usable
+    expect(opts.map((o) => o.key)).toEqual(['ttm', 'avg3']);
+    const avg3 = opts.find((o) => o.key === 'avg3')!;
+    expect(avg3.value).toBe(15);
+    expect(avg3.label).toBe('3Y avg (2 yr)');
+    expect(defaultFcfBaseKey(profileWithFcf([10, 20]))).toBe('ttm'); // <3 usable → TTM default
+  });
+
+  it('5Y avg needs ≥3 usable years; averages up to 3/5 most-recent; default flips to 3Y avg', () => {
+    const p = profileWithFcf([1, 2, 3, 4, 5, 6]); // 6 usable, newest = 6
+    const opts = fcfBaseOptions(p, 100);
+    expect(opts.map((o) => o.key)).toEqual(['ttm', 'avg3', 'avg5']);
+    expect(opts.find((o) => o.key === 'avg3')!.value).toBe(5); // (6+5+4)/3
+    expect(opts.find((o) => o.key === 'avg5')!.value).toBe(4); // (6+5+4+3+2)/5
+    expect(defaultFcfBaseKey(p)).toBe('avg3');
+  });
+
+  it('averages only usable years, never coercing null→0', () => {
+    expect(usableFcfValues(profileWithFcf([10, null, 30]))).toEqual([30, 10]); // newest-first, nulls dropped
+    const avg3 = fcfBaseOptions(profileWithFcf([10, null, 30]), 5).find((o) => o.key === 'avg3')!;
+    expect(avg3.value).toBe(20); // (30+10)/2, not (30+0+10)/3
   });
 });
