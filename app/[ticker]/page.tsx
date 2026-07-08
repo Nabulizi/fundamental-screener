@@ -8,7 +8,7 @@ import { computeDrivers, type ValuationProfile, type ValuationProvider } from '@
 import {
   formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, formatRatio
 } from '@/lib/format';
-import DcfPanel from '@/components/DcfPanel';
+import ValuationPanel from '@/components/ValuationPanel';
 import DriverStrip from '@/components/DriverStrip';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
@@ -116,13 +116,14 @@ export default async function TickerPage({ params }: { params: { ticker: string 
 
       {showDrivers && <DriverStrip drivers={drivers} />}
 
-      <DcfPanel
+      <ValuationPanel
         fcf0={fcf0}
         marketCap={row.marketCap}
         currency={row.currency}
         revenueGrowthTTM={row.revenueGrowthTTM}
         isFinancial={isBalanceSheetFinancial(row.ticker, row.industry)}
         profile={profile}
+        sharesOutstanding={profile?.sharesOutstanding ?? null}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>

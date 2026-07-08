@@ -1,0 +1,106 @@
+'use client';
+
+import { useState } from 'react';
+import { fcfBaseOptions, defaultFcfBaseKey, type FcfBaseKey, type ValuationProfile } from '@/lib/valuation';
+import { formatMarketCap } from '@/lib/format';
+import DcfPanel from './DcfPanel';
+import ScenarioPanel from './ScenarioPanel';
+
+interface Props {
+  /** TTM base FCF (raw currency units), or null when unavailable / non-positive. */
+  fcf0: number | null;
+  marketCap: number | null;
+  currency: string | null;
+  revenueGrowthTTM?: number | null;
+  /** Server-computed isBalanceSheetFinancial — kept OUT of the client bundle here. */
+  isFinancial: boolean;
+  profile: ValuationProfile | null;
+  /** Latest annual diluted weighted-average shares, for per-share output. */
+  sharesOutstanding: number | null;
+}
+
+// Owns the shared FCF-base selection so the reverse-DCF and scenario panels
+// consume ONE effectiveFcf (no duplicated selector). The financial gate and the
+// no-positive-base fallback live here — preserving Phase-2 behavior exactly.
+export default function ValuationPanel({
+  fcf0, marketCap, currency, revenueGrowthTTM, isFinancial, profile, sharesOutstanding,
+}: Props) {
+  const [baseKey, setBaseKey] = useState<FcfBaseKey>(() => defaultFcfBaseKey(profile));
+  const [customFcf, setCustomFcf] = useState<number | null>(null);
+
+  if (isFinancial) {
+    return (
+      <section className="dcf">
+        <h2>What&rsquo;s priced in? (reverse DCF)</h2>
+        <p className="hint">
+          A cash-flow DCF isn&rsquo;t meaningful for financials — a bank or broker&rsquo;s cash flow is
+          driven by customer balances and balance-sheet movements, not operating earnings (the same
+          reason the scorecard neutralizes FCF criteria here). Informational only.
+        </p>
+      </section>
+    );
+  }
+
+  const options = fcfBaseOptions(profile, fcf0);
+  if (options.length === 0) {
+    return (
+      <section className="dcf">
+        <h2>What&rsquo;s priced in? (reverse DCF)</h2>
+        <p className="hint">
+          A reverse DCF needs positive free cash flow. Neither trailing-twelve-month nor multi-year
+          normalized FCF is positive here, so it isn&rsquo;t meaningful — informational only.
+        </p>
+      </section>
+    );
+  }
+
+  const selectedOpt = options.find((o) => o.key === baseKey) ?? options[0];
+  const effectiveFcf = customFcf ?? selectedOpt.value;
+  const hasSelector = options.length > 1;
+  const chooseBase = (k: FcfBaseKey) => { setBaseKey(k); setCustomFcf(null); };
+
+  return (
+    <>
+      {hasSelector && (
+        <div className="dcf-base">
+          <span className="dcf-label">FCF base</span>
+          <div className="dcf-base-btns">
+            {options.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                className={`dcf-base-btn${o.key === selectedOpt.key && customFcf == null ? ' active' : ''}`}
+                onClick={() => chooseBase(o.key)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <label className="dcf-adjust">
+            adjust ($)
+            <input type="number" value={Math.round(effectiveFcf)} onChange={(e) => setCustomFcf(Number(e.target.value))} />
+            <span className="dcf-unit">≈ {formatMarketCap(effectiveFcf, currency)}</span>
+          </label>
+        </div>
+      )}
+
+      {effectiveFcf > 0 ? (
+        <>
+          <DcfPanel
+            effectiveFcf={effectiveFcf}
+            baseLabel={selectedOpt.label}
+            marketCap={marketCap}
+            currency={currency}
+            revenueGrowthTTM={revenueGrowthTTM}
+          />
+          <ScenarioPanel effectiveFcf={effectiveFcf} currency={currency} shares={sharesOutstanding} />
+        </>
+      ) : (
+        <section className="dcf">
+          <h2>What&rsquo;s priced in? (reverse DCF)</h2>
+          <p className="dcf-warn">Base FCF must be positive.</p>
+        </section>
+      )}
+    </>
+  );
+}

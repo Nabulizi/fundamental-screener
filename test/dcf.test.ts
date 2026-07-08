@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { intrinsicDcf, impliedGrowth } from '@/lib/dcf';
+import { intrinsicDcf, impliedGrowth, computeScenarios, isInvertedRange, scenarioAssumptionsValid } from '@/lib/dcf';
 
 describe('intrinsicDcf', () => {
   it('matches a hand-computed two-stage DCF', () => {
@@ -34,5 +34,46 @@ describe('impliedGrowth', () => {
     const { growth, outOfRange } = impliedGrowth(base, 1); // absurdly low market cap
     expect(outOfRange).toBe(true);
     expect(growth).toBe(-0.5);
+  });
+});
+
+describe('computeScenarios / isInvertedRange (Phase 4)', () => {
+  const shared = { costOfEquity: 0.11, terminalGrowth: 0.03, years: 10 };
+  const growths = { bear: 0.03, base: 0.08, bull: 0.15 };
+
+  it('per-share = equityValue / shares; ordering is fixed bear→base→bull', () => {
+    const r = computeScenarios(1000, growths, shared, 200);
+    expect(r.map((x) => x.label)).toEqual(['bear', 'base', 'bull']);
+    for (const s of r) expect(s.perShare).toBeCloseTo(s.equityValue / 200, 6);
+  });
+
+  it('default presets produce a monotonic (non-inverted) range', () => {
+    const r = computeScenarios(1000, growths, shared, 200);
+    expect(r[0].equityValue).toBeLessThanOrEqual(r[1].equityValue);
+    expect(r[1].equityValue).toBeLessThanOrEqual(r[2].equityValue);
+    expect(isInvertedRange(r)).toBe(false);
+  });
+
+  it('missing/invalid shares → perShare null, equity value still present', () => {
+    for (const shares of [null, 0, -5]) {
+      const r = computeScenarios(1000, growths, shared, shares);
+      expect(r.every((x) => x.perShare === null)).toBe(true);
+      expect(r.every((x) => Number.isFinite(x.equityValue))).toBe(true);
+    }
+  });
+
+  it('user-edited assumptions may invert the range — flagged, never sorted', () => {
+    // Bull growth below bear growth → inverted equity values, order preserved.
+    const r = computeScenarios(1000, { bear: 0.15, base: 0.08, bull: 0.03 }, shared, 200);
+    expect(r.map((x) => x.label)).toEqual(['bear', 'base', 'bull']); // not sorted
+    expect(isInvertedRange(r)).toBe(true);
+  });
+
+  it('terminal guard: terminal within 100bps of cost of equity is invalid and throws', () => {
+    expect(scenarioAssumptionsValid(0.11, 0.03)).toBe(true);
+    expect(scenarioAssumptionsValid(0.11, 0.10)).toBe(true);   // exactly 100bps → valid
+    expect(scenarioAssumptionsValid(0.05, 0.049)).toBe(false); // 10bps spread → invalid
+    expect(scenarioAssumptionsValid(0.11, 0.105)).toBe(false); // 50bps spread → invalid
+    expect(() => computeScenarios(1000, growths, { costOfEquity: 0.05, terminalGrowth: 0.049, years: 10 }, 200)).toThrow();
   });
 });

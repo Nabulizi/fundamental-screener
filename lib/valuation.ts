@@ -29,7 +29,11 @@ export interface ValuationProfile {
   fcfTtm: number | null;
   /** Annual history, oldest → newest. May be empty (no source) or partial. */
   history: ValuationYear[];
-  /** Latest diluted share count, for future per-share output (Phase 4). */
+  /**
+   * Latest annual DILUTED WEIGHTED-AVERAGE share count from the provider — NOT a
+   * point-in-time shares-outstanding figure. Used for per-share output; the model
+   * holds it constant (no forecasted buybacks/issuance). Label it as such in UI.
+   */
   sharesOutstanding: number | null;
   /**
    * Latest cash − total debt. Often null: reported debt coverage is partial, so
