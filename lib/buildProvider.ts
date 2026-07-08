@@ -5,7 +5,9 @@ import 'server-only';
 import { createFinnhubProvider } from './finnhub';
 import { createAlphaVantageProvider } from './alphavantage';
 import { createFallbackProvider } from './fallbackProvider';
+import { createFinnhubValuationProvider } from './valuationProvider';
 import type { QuoteProvider } from './provider';
+import type { ValuationProvider } from './valuation';
 
 /**
  * Assemble the live provider from env keys. SERVER-ONLY — reads FINNHUB_API_KEY
@@ -27,6 +29,19 @@ export function buildProvider(): QuoteProvider | null {
   if (alphaVantageKey) providers.push(createAlphaVantageProvider(alphaVantageKey));
 
   return providers.length > 1 ? createFallbackProvider(providers) : providers[0];
+}
+
+/**
+ * Valuation history provider (Finnhub-only; standardized financials are premium,
+ * so this uses /stock/financials-reported). Returns null when no Finnhub key is
+ * configured — the detail page treats "no profile" as a first-class state.
+ * SERVER-ONLY (this module already imports 'server-only').
+ */
+export function buildValuationProvider(): ValuationProvider | null {
+  const apiKey = process.env.FINNHUB_API_KEY;
+  if (!apiKey) return null;
+  const key = apiKey.split(',').map((k) => k.trim()).filter(Boolean)[0];
+  return key ? createFinnhubValuationProvider(key) : null;
 }
 
 /** Cache TTL in seconds from CACHE_TTL_SECONDS (default 60). Shared so the scan
