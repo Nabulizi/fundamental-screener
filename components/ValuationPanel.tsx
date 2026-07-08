@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { fcfBaseOptions, defaultFcfBaseKey, resolveFcfBase, type FcfBaseKey, type ValuationProfile } from '@/lib/valuation';
+import { fcfBaseOptions, defaultFcfBaseKey, resolveFcfBase, type FcfBaseKey, type ValuationProfile, type Drivers } from '@/lib/valuation';
+import { buildMarketExpectations } from '@/lib/marketExpectations';
+import { SCENARIO_PRESETS } from '@/lib/dcf';
 import { formatMarketCap } from '@/lib/format';
 import DcfPanel from './DcfPanel';
 import ScenarioPanel from './ScenarioPanel';
+import MarketExpectationsCard from './MarketExpectationsCard';
 
 interface Props {
   /** TTM base FCF (raw currency units), or null when unavailable / non-positive. */
@@ -17,13 +20,15 @@ interface Props {
   profile: ValuationProfile | null;
   /** Latest annual diluted weighted-average shares, for per-share output. */
   sharesOutstanding: number | null;
+  /** Driver metrics (delivered context for the market-expectations card). */
+  drivers: Drivers | null;
 }
 
 // Owns the shared FCF-base selection so the reverse-DCF and scenario panels
 // consume ONE effectiveFcf (no duplicated selector). The financial gate and the
 // no-positive-base fallback live here — preserving Phase-2 behavior exactly.
 export default function ValuationPanel({
-  fcf0, marketCap, currency, revenueGrowthTTM, isFinancial, profile, sharesOutstanding,
+  fcf0, marketCap, currency, revenueGrowthTTM, isFinancial, profile, sharesOutstanding, drivers,
 }: Props) {
   const [baseKey, setBaseKey] = useState<FcfBaseKey>(() => defaultFcfBaseKey(profile));
   const [customFcf, setCustomFcf] = useState<number | null>(null);
@@ -86,6 +91,15 @@ export default function ValuationPanel({
 
       {effectiveFcf > 0 ? (
         <>
+          <MarketExpectationsCard
+            model={buildMarketExpectations({
+              effectiveFcf,
+              marketCap,
+              shared: SCENARIO_PRESETS.shared,
+              drivers,
+              revenueGrowthTTM: revenueGrowthTTM ?? null,
+            })}
+          />
           <DcfPanel
             effectiveFcf={effectiveFcf}
             baseLabel={selectedOpt.label}
