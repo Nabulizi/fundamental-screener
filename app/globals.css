@@ -976,6 +976,9 @@ tr.row-weak:hover { background: var(--panel-2); }
 .driver-value { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .drivers .hint { margin-top: 0.6rem; }
 
+.va-assumptions { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; margin: 1.25rem 0 0.25rem; }
+.va-assumptions .dcf-slider { min-width: 180px; }
+
 .mx { margin-top: 2rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
 .mx h2 { margin: 0 0 0.75rem; font-size: 1.15rem; }
 .mx-implied { display: flex; flex-direction: column; gap: 0.2rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--border); }

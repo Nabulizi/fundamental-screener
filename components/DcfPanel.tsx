@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { impliedGrowth } from '@/lib/dcf';
 import { formatMarketCap } from '@/lib/format';
 
@@ -14,19 +13,22 @@ interface Props {
   currency: string | null;
   /** Trailing revenue growth (%), shown as neutral context for the implied number. */
   revenueGrowthTTM?: number | null;
+  /** SHARED assumptions (percent / whole years) owned by ValuationPanel — so this
+   *  and the market-expectations card always show the same implied growth. */
+  discountRate: number;
+  terminal: number;
+  years: number;
 }
 
-// Reverse DCF: surface the FCF growth the market is *already pricing in* at
-// today's price. The FCF-base selection lives in the parent ValuationPanel and
-// is passed in as effectiveFcf, so this and the scenario panel share one base.
+// Reverse DCF: the FCF growth the market is *already pricing in*. Assumptions and
+// the FCF base are owned by ValuationPanel and passed in, so the card, this panel,
+// and the scenario anchor share one basis.
 //
 // ponytail: effectiveFcf is equity/levered FCF, so the DCF value is an equity
 // value compared directly to market cap; netCash stays 0 (see lib/dcf.ts).
-export default function DcfPanel({ effectiveFcf, baseLabel, marketCap, currency, revenueGrowthTTM }: Props) {
-  const [discountRate, setDiscountRate] = useState(11);
-  const [terminal, setTerminal] = useState(3);
-  const [years, setYears] = useState(10);
-
+export default function DcfPanel({
+  effectiveFcf, baseLabel, marketCap, currency, revenueGrowthTTM, discountRate, terminal, years,
+}: Props) {
   const valid = discountRate / 100 > terminal / 100 && marketCap != null;
   const implied = valid
     ? impliedGrowth(
@@ -50,14 +52,8 @@ export default function DcfPanel({ effectiveFcf, baseLabel, marketCap, currency,
       <p className="hint">
         At today&rsquo;s market cap ({formatMarketCap(marketCap, currency)}) and the {baseLabel} FCF
         base (~{formatMarketCap(effectiveFcf, currency)}), this is the annual FCF growth the market is
-        implying over your horizon. Informational only — a market-implied assumption, not a target.
+        implying at the assumptions above. Informational only — a market-implied assumption, not a target.
       </p>
-
-      <div className="dcf-inputs">
-        <Slider label="Discount rate" value={discountRate} set={setDiscountRate} min={5} max={20} suffix="%" />
-        <Slider label="Terminal growth" value={terminal} set={setTerminal} min={0} max={6} suffix="%" />
-        <Slider label="Horizon" value={years} set={setYears} min={5} max={15} suffix="yr" />
-      </div>
 
       {!valid ? (
         <p className="dcf-warn">Discount rate must exceed terminal growth.</p>
@@ -76,20 +72,5 @@ export default function DcfPanel({ effectiveFcf, baseLabel, marketCap, currency,
         </div>
       )}
     </section>
-  );
-}
-
-function Slider({
-  label, value, set, min, max, suffix
-}: { label: string; value: number; set: (n: number) => void; min: number; max: number; suffix: string }) {
-  return (
-    <label className="dcf-slider">
-      <span>{label}</span>
-      <input type="range" min={min} max={max} value={value} onChange={(e) => set(Number(e.target.value))} />
-      <output>
-        {value}
-        {suffix}
-      </output>
-    </label>
   );
 }
