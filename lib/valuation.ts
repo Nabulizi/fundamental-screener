@@ -156,6 +156,61 @@ export interface Drivers {
   shareCountWindowYears: number | null;
 }
 
+// --- Data anomaly flags (Week 1) --------------------------------------------
+// The tool's value depends on NOT letting bad/odd provider data look
+// authoritative. These are neutral "verify this" flags, not quality judgments.
+
+export interface FundamentalFlag {
+  fiscalYear: number;
+  field: 'revenue' | 'freeCashFlow' | 'sharesDiluted' | 'capex' | 'history';
+  note: string;
+}
+
+export const ANOMALY_THRESHOLDS = {
+  revenueYoYPct: 60, // |YoY revenue change| beyond this is worth a look
+  sharesYoYPct: 25,  // large diluted-share jumps → split / big issuance
+} as const;
+
+/**
+ * Neutral data-quality flags over the annual history: outsized revenue/share
+ * moves, FCF sign flips, negative-FCF years, missing capex (FCF not derivable),
+ * and gaps in the fiscal-year sequence. Pure; empty for null/short history.
+ */
+export function detectFundamentalFlags(profile: ValuationProfile | null): FundamentalFlag[] {
+  const h = profile?.history ?? [];
+  const flags: FundamentalFlag[] = [];
+  for (let i = 0; i < h.length; i++) {
+    const y = h[i];
+    if (y.capex == null && y.operatingCashFlow != null) {
+      flags.push({ fiscalYear: y.fiscalYear, field: 'capex', note: 'Capex not reported — free cash flow not derivable this year.' });
+    }
+    if (y.freeCashFlow != null && y.freeCashFlow < 0) {
+      flags.push({ fiscalYear: y.fiscalYear, field: 'freeCashFlow', note: 'Negative free cash flow — pulls down any normalized base that includes this year.' });
+    }
+    if (i === 0) continue;
+    const p = h[i - 1];
+    if (y.revenue != null && p.revenue != null && p.revenue !== 0) {
+      const chg = ((y.revenue - p.revenue) / Math.abs(p.revenue)) * 100;
+      if (Math.abs(chg) > ANOMALY_THRESHOLDS.revenueYoYPct) {
+        flags.push({ fiscalYear: y.fiscalYear, field: 'revenue', note: `Revenue ${chg > 0 ? 'jumped' : 'dropped'} ${chg.toFixed(0)}% YoY — verify (restatement, M&A, or provider artifact).` });
+      }
+    }
+    if (y.sharesDiluted != null && p.sharesDiluted != null && p.sharesDiluted !== 0) {
+      const chg = ((y.sharesDiluted - p.sharesDiluted) / Math.abs(p.sharesDiluted)) * 100;
+      if (Math.abs(chg) > ANOMALY_THRESHOLDS.sharesYoYPct) {
+        flags.push({ fiscalYear: y.fiscalYear, field: 'sharesDiluted', note: `Diluted shares changed ${chg > 0 ? '+' : ''}${chg.toFixed(0)}% YoY — possible split or large issuance; per-share history may not be comparable.` });
+      }
+    }
+    if (y.freeCashFlow != null && p.freeCashFlow != null && (y.freeCashFlow < 0) !== (p.freeCashFlow < 0)) {
+      flags.push({ fiscalYear: y.fiscalYear, field: 'freeCashFlow', note: 'Free cash flow changed sign YoY — lumpy; a single-year base is unreliable.' });
+    }
+    if (y.fiscalYear - p.fiscalYear > 1) {
+      flags.push({ fiscalYear: y.fiscalYear, field: 'history', note: `Gap in annual history (${p.fiscalYear} → ${y.fiscalYear}).` });
+    }
+  }
+  return flags;
+}
+
 /** Most recent ≤maxYears fiscal years of history. */
 function recentWindow(history: ValuationYear[], maxYears = 5): ValuationYear[] {
   if (history.length === 0) return [];

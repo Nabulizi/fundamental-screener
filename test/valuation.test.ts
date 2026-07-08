@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, computeDrivers, resolveFcfBase,
+  deriveFreeCashFlow, fcfBaseOptions, defaultFcfBaseKey, usableFcfValues, computeDrivers, resolveFcfBase, detectFundamentalFlags,
   type ValuationProfile, type ValuationYear
 } from '@/lib/valuation';
 import { parseFinancialsReported } from '@/lib/valuationProvider';
@@ -248,5 +248,48 @@ describe('resolveFcfBase (shared effective-FCF selection)', () => {
   });
   it('returns null when there is no usable base', () => {
     expect(resolveFcfBase([], 'ttm', null)).toBeNull();
+  });
+});
+
+describe('detectFundamentalFlags (Week 1 data-quality)', () => {
+  const yr = (over: Partial<ValuationYear>): ValuationYear => ({
+    fiscalYear: 2020, fiscalPeriodEnd: null, revenue: null, operatingIncome: null,
+    operatingCashFlow: null, capex: null, freeCashFlow: null, stockBasedCompensation: null, sharesDiluted: null, ...over,
+  });
+  const mk = (years: ValuationYear[]): ValuationProfile => ({
+    ticker: 'T', fcfTtm: null, sharesOutstanding: null, netCash: null, source: 'finnhub-reported', retrievedAt: AT, history: years,
+  });
+
+  it('flags outsized revenue moves, share jumps, FCF sign flips, negative FCF, missing capex, and gaps', () => {
+    const p = mk([
+      yr({ fiscalYear: 2020, revenue: 1000, operatingCashFlow: 200, capex: 50, freeCashFlow: 150, sharesDiluted: 1000 }),
+      yr({ fiscalYear: 2021, revenue: 1800, operatingCashFlow: 100, capex: null, freeCashFlow: null, sharesDiluted: 1400 }), // +80% rev, +40% shares, missing capex
+      yr({ fiscalYear: 2022, revenue: 1850, operatingCashFlow: -50, capex: 30, freeCashFlow: -80, sharesDiluted: 1420 }),   // FCF negative + sign flip vs... (2021 fcf null so no flip) 
+      yr({ fiscalYear: 2024, revenue: 1900, operatingCashFlow: 300, capex: 40, freeCashFlow: 260, sharesDiluted: 1430 }),   // gap 2022->2024; FCF sign flip neg->pos
+    ]);
+    const flags = detectFundamentalFlags(p);
+    const has = (year: number, field: string) => flags.some((f) => f.fiscalYear === year && f.field === field);
+    expect(has(2021, 'revenue')).toBe(true);       // +80% > 60
+    expect(has(2021, 'sharesDiluted')).toBe(true);  // +40% > 25
+    expect(has(2021, 'capex')).toBe(true);          // missing capex
+    expect(has(2022, 'freeCashFlow')).toBe(true);   // negative FCF
+    expect(has(2024, 'freeCashFlow')).toBe(true);   // sign flip -80 -> 260
+    expect(has(2024, 'history')).toBe(true);        // 2022 -> 2024 gap
+  });
+
+  it('a clean, steady history produces no flags', () => {
+    const p = mk([
+      yr({ fiscalYear: 2022, revenue: 1000, operatingCashFlow: 200, capex: 50, freeCashFlow: 150, sharesDiluted: 1000 }),
+      yr({ fiscalYear: 2023, revenue: 1080, operatingCashFlow: 210, capex: 52, freeCashFlow: 158, sharesDiluted: 990 }),
+      yr({ fiscalYear: 2024, revenue: 1150, operatingCashFlow: 220, capex: 55, freeCashFlow: 165, sharesDiluted: 985 }),
+    ]);
+    expect(detectFundamentalFlags(p)).toEqual([]);
+  });
+
+  it('null profile → no flags, no throw; real fixtures do not throw', () => {
+    expect(detectFundamentalFlags(null)).toEqual([]);
+    for (const f of ['AAPL.financials-reported.json', 'HOOD.financials-reported.json', 'PLD.financials-reported.json']) {
+      expect(() => detectFundamentalFlags(parseFinancialsReported(fixture(f), 'X', AT))).not.toThrow();
+    }
   });
 });
