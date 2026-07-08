@@ -10,6 +10,7 @@ import {
 } from '@/lib/format';
 import ValuationPanel from '@/components/ValuationPanel';
 import DriverStrip from '@/components/DriverStrip';
+import FundamentalsTable from '@/components/FundamentalsTable';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -115,6 +116,10 @@ export default async function TickerPage({ params }: { params: { ticker: string 
       </section>
 
       {showDrivers && <DriverStrip drivers={drivers} />}
+
+      {profile && profile.history.length > 0 && (
+        <FundamentalsTable profile={profile} currency={row.currency} />
+      )}
 
       <ValuationPanel
         fcf0={fcf0}

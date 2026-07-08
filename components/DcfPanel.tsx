@@ -24,8 +24,8 @@ interface Props {
 // the FCF base are owned by ValuationPanel and passed in, so the card, this panel,
 // and the scenario anchor share one basis.
 //
-// ponytail: effectiveFcf is equity/levered FCF, so the DCF value is an equity
-// value compared directly to market cap; netCash stays 0 (see lib/dcf.ts).
+// Note: effectiveFcf is equity/levered FCF, so the DCF value is an equity value
+// compared directly to market cap; netCash stays 0 (see lib/dcf.ts).
 export default function DcfPanel({
   effectiveFcf, baseLabel, marketCap, currency, revenueGrowthTTM, discountRate, terminal, years,
 }: Props) {

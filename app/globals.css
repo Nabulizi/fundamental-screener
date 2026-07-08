@@ -976,6 +976,17 @@ tr.row-weak:hover { background: var(--panel-2); }
 .driver-value { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .drivers .hint { margin-top: 0.6rem; }
 
+.ft { margin-top: 2rem; }
+.ft h2 { margin: 0 0 0.6rem; font-size: 1.15rem; }
+.ft-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.ft-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.ft-table th, .ft-table td { padding: 0.45rem 0.7rem; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.ft-table thead th { position: sticky; top: 0; background: var(--panel-2); color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ft-table tbody th[scope="row"], .ft-table thead th:first-child, .ft-table td:first-child { text-align: left; }
+.ft-table tbody tr:last-child th, .ft-table tbody tr:last-child td { border-bottom: none; }
+.ft-flagged { color: #fbbf24; }
+.ft-flag { cursor: help; }
+
 .va-assumptions { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; margin: 1.25rem 0 0.25rem; }
 .va-assumptions .dcf-slider { min-width: 180px; }
 
