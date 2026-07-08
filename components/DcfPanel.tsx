@@ -69,7 +69,8 @@ export default function DcfPanel({ fcf0, marketCap, currency, revenueGrowthTTM, 
     pct == null
       ? '—'
       : implied?.outOfRange
-        ? `${pct > 0 ? '>' : '<'}${Math.abs(pct).toFixed(0)}%`
+        // Keep the sign: the lower clamp is growth BELOW -50%, so show "<-50%".
+        ? `${pct > 0 ? '>' : '<'}${pct.toFixed(0)}%`
         : `${pct.toFixed(1)}%`;
 
   return (
