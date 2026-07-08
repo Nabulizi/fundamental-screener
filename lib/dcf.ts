@@ -72,6 +72,86 @@ export function impliedGrowth(
   return { growth: (lo + hi) / 2, outOfRange: false };
 }
 
+// --- Bear/Base/Bull scenarios (Phase 4) -------------------------------------
+// Assumption-driven value-per-share RANGE, informational only — never a fair
+// value or price target. Same basis as the reverse-DCF lens: equity FCF grown at
+// a per-scenario rate, discounted at a SHARED cost of equity, compared to market
+// cap; netCash stays 0 (no EV bridge).
+
+export type ScenarioLabel = 'bear' | 'base' | 'bull';
+
+/** Shared (company-level) assumptions across all three scenarios. */
+export interface SharedAssumptions {
+  /** Cost of equity (decimal). Company-level required return — shared, not a scenario knob. */
+  costOfEquity: number;
+  /** Perpetuity growth (decimal). Must be ≥ TERMINAL_SPREAD below costOfEquity. */
+  terminalGrowth: number;
+  years: number;
+}
+
+export interface ScenarioResult {
+  label: ScenarioLabel;
+  /** Per-scenario FCF growth (decimal) — the ONLY per-scenario variable. */
+  fcfGrowth: number;
+  equityValue: number;
+  /** equityValue / shares, or null when shares are missing/invalid. */
+  perShare: number | null;
+}
+
+/** Terminal growth must sit at least this far (100 bps) below cost of equity —
+ *  r≈g makes the Gordon terminal value explode, so r>g alone is not enough. */
+export const TERMINAL_SPREAD = 0.01;
+
+export const SCENARIO_PRESETS: {
+  growths: Record<ScenarioLabel, number>;
+  shared: SharedAssumptions;
+} = {
+  growths: { bear: 0.03, base: 0.08, bull: 0.15 },
+  shared: { costOfEquity: 0.11, terminalGrowth: 0.03, years: 10 },
+};
+
+/** Valid only when terminal growth is ≥100 bps below cost of equity. */
+export function scenarioAssumptionsValid(costOfEquity: number, terminalGrowth: number): boolean {
+  return terminalGrowth <= costOfEquity - TERMINAL_SPREAD;
+}
+
+/**
+ * Compute the three scenarios in fixed bear→base→bull order (never sorted).
+ * @throws if the shared assumptions violate the terminal-spread guard — callers
+ * validate first and show a warning rather than render a misleading value.
+ */
+export function computeScenarios(
+  fcf0: number,
+  growths: Record<ScenarioLabel, number>,
+  shared: SharedAssumptions,
+  shares: number | null
+): ScenarioResult[] {
+  if (!scenarioAssumptionsValid(shared.costOfEquity, shared.terminalGrowth)) {
+    throw new Error('terminalGrowth must be at least 100bps below costOfEquity');
+  }
+  const order: ScenarioLabel[] = ['bear', 'base', 'bull'];
+  return order.map((label) => {
+    const equityValue = intrinsicDcf({
+      fcf0,
+      growth: growths[label],
+      discountRate: shared.costOfEquity,
+      terminalGrowth: shared.terminalGrowth,
+      years: shared.years,
+    }).equityValue;
+    const perShare = shares != null && shares > 0 ? equityValue / shares : null;
+    return { label, fcfGrowth: growths[label], equityValue, perShare };
+  });
+}
+
+/** True when the fixed-order results are NOT monotonically non-decreasing by
+ *  equity value (user edits can invert bear/base/bull). */
+export function isInvertedRange(results: ScenarioResult[]): boolean {
+  for (let i = 1; i < results.length; i++) {
+    if (results[i].equityValue < results[i - 1].equityValue) return true;
+  }
+  return false;
+}
+
 /**
  * @throws if discountRate <= terminalGrowth (Gordon growth diverges) or years < 1.
  */
