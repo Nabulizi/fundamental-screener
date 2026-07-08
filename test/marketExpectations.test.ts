@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildMarketExpectations, EXPECTATION_GAP_PP } from '@/lib/marketExpectations';
-import { intrinsicDcf, type SharedAssumptions } from '@/lib/dcf';
+import { intrinsicDcf, impliedGrowth, type SharedAssumptions } from '@/lib/dcf';
 import type { Drivers } from '@/lib/valuation';
 
 const shared: SharedAssumptions = { costOfEquity: 0.11, terminalGrowth: 0.03, years: 10 };
@@ -52,6 +52,20 @@ describe('buildMarketExpectations', () => {
     let m!: ReturnType<typeof buildMarketExpectations>;
     expect(() => { m = buildMarketExpectations({ effectiveFcf: 100, marketCap: 5000, shared: low, drivers: null, revenueGrowthTTM: null }); }).not.toThrow();
     expect(m.bandLowPct).toBeNull(); // 3% discount fails the terminal-spread guard → null, not a crash
+  });
+
+  it('card and reverse-DCF agree exactly for the same shared assumptions (single-source consistency)', () => {
+    // Both derive from impliedGrowth with identical inputs, so with one shared
+    // assumption set (ValuationPanel is the single source) they cannot disagree.
+    for (const s of [
+      { costOfEquity: 0.11, terminalGrowth: 0.03, years: 10 },
+      { costOfEquity: 0.09, terminalGrowth: 0.02, years: 12 },
+      { costOfEquity: 0.14, terminalGrowth: 0.04, years: 8 },
+    ] as SharedAssumptions[]) {
+      const card = buildMarketExpectations({ effectiveFcf: 4.7e9, marketCap: 1.5e12, shared: s, drivers: null, revenueGrowthTTM: null });
+      const dcf = impliedGrowth({ fcf0: 4.7e9, discountRate: s.costOfEquity, terminalGrowth: s.terminalGrowth, years: s.years }, 1.5e12);
+      expect(card.impliedPct).toBeCloseTo(dcf.growth * 100, 6);
+    }
   });
 
   it('out-of-range implied growth still flags a gap (beyond the solvable range)', () => {

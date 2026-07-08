@@ -27,11 +27,21 @@ interface Props {
 // Owns the shared FCF-base selection so the reverse-DCF and scenario panels
 // consume ONE effectiveFcf (no duplicated selector). The financial gate and the
 // no-positive-base fallback live here — preserving Phase-2 behavior exactly.
+const asPct = (d: number) => Math.round(d * 100);
+
 export default function ValuationPanel({
   fcf0, marketCap, currency, revenueGrowthTTM, isFinancial, profile, sharesOutstanding, drivers,
 }: Props) {
   const [baseKey, setBaseKey] = useState<FcfBaseKey>(() => defaultFcfBaseKey(profile));
   const [customFcf, setCustomFcf] = useState<number | null>(null);
+  // SHARED valuation assumptions (single source of truth) — so the market-
+  // expectations card, reverse DCF, and scenario anchor never show conflicting
+  // "market-implied growth" numbers. Percent / whole-year units.
+  const [discountRate, setDiscountRate] = useState(asPct(SCENARIO_PRESETS.shared.costOfEquity));
+  const [terminal, setTerminal] = useState(asPct(SCENARIO_PRESETS.shared.terminalGrowth));
+  const [years, setYears] = useState(SCENARIO_PRESETS.shared.years);
+  const shared = { costOfEquity: discountRate / 100, terminalGrowth: terminal / 100, years };
+  const assumptionsValid = terminal <= discountRate - 1; // ≥100bps spread
 
   if (isFinancial) {
     return (
@@ -91,11 +101,23 @@ export default function ValuationPanel({
 
       {effectiveFcf > 0 ? (
         <>
+          {/* Shared assumptions — ONE control set drives the card, reverse DCF,
+              and scenario anchor, so they can never disagree. */}
+          <div className="va-assumptions">
+            <span className="dcf-label">Assumptions</span>
+            <Slider label="Discount rate" value={discountRate} set={setDiscountRate} min={5} max={20} suffix="%" />
+            <Slider label="Terminal growth" value={terminal} set={setTerminal} min={0} max={6} suffix="%" />
+            <Slider label="Horizon" value={years} set={setYears} min={5} max={15} suffix="yr" />
+          </div>
+          {!assumptionsValid && (
+            <p className="dcf-warn">Terminal growth must be at least 1% below the discount rate.</p>
+          )}
+
           <MarketExpectationsCard
             model={buildMarketExpectations({
               effectiveFcf,
               marketCap,
-              shared: SCENARIO_PRESETS.shared,
+              shared,
               drivers,
               revenueGrowthTTM: revenueGrowthTTM ?? null,
             })}
@@ -106,10 +128,23 @@ export default function ValuationPanel({
             marketCap={marketCap}
             currency={currency}
             revenueGrowthTTM={revenueGrowthTTM}
+            discountRate={discountRate}
+            terminal={terminal}
+            years={years}
           />
-          {/* key by the base so switching FCF base re-seeds the scenarios around
-              the new market-implied anchor. */}
-          <ScenarioPanel key={effectiveFcf} effectiveFcf={effectiveFcf} marketCap={marketCap} currency={currency} shares={sharesOutstanding} />
+          {/* key by the base so switching FCF base re-seeds the growths around
+              the new anchor; changing shared assumptions moves the live anchor via
+              props without wiping the user's growth edits. */}
+          <ScenarioPanel
+            key={effectiveFcf}
+            effectiveFcf={effectiveFcf}
+            marketCap={marketCap}
+            currency={currency}
+            shares={sharesOutstanding}
+            costOfEquityPct={discountRate}
+            terminalPct={terminal}
+            years={years}
+          />
         </>
       ) : (
         <section className="dcf">
@@ -118,5 +153,17 @@ export default function ValuationPanel({
         </section>
       )}
     </>
+  );
+}
+
+function Slider({
+  label, value, set, min, max, suffix
+}: { label: string; value: number; set: (n: number) => void; min: number; max: number; suffix: string }) {
+  return (
+    <label className="dcf-slider">
+      <span>{label}</span>
+      <input type="range" min={min} max={max} value={value} onChange={(e) => set(Number(e.target.value))} />
+      <output>{value}{suffix}</output>
+    </label>
   );
 }

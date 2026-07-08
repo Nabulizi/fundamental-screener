@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   computeScenarios, isInvertedRange, scenarioInputsValid, marketImpliedGrowthPct, seedScenarioGrowths,
-  SCENARIO_PRESETS, type ScenarioLabel,
+  type ScenarioLabel,
 } from '@/lib/dcf';
 import { formatCurrency, formatMarketCap } from '@/lib/format';
 
@@ -15,23 +15,31 @@ interface Props {
   currency: string | null;
   /** Latest annual diluted weighted-average shares, or null when unavailable. */
   shares: number | null;
+  /** SHARED assumptions (percent / whole years) owned by ValuationPanel. */
+  costOfEquityPct: number;
+  terminalPct: number;
+  years: number;
 }
 
 const LABELS: Record<ScenarioLabel, string> = { bear: 'Bear', base: 'Base', bull: 'Bull' };
-const pct = (d: number) => Math.round(d * 100);
 
 // Assumption-driven value-per-share RANGE, anchored to the reverse-DCF
 // market-implied FCF growth: Base starts at what's priced in, Bear/Bull are
 // ±10pp around it. Answers "what if FCF growth is below / near / above what the
 // market already implies?" No upside/downside, current-price comparison, or
 // green/red verdicts. Parent keys this by effectiveFcf, so a base change re-seeds.
-export default function ScenarioPanel({ effectiveFcf, marketCap, currency, shares }: Props) {
-  // Seed the growths around the anchor computed with the DEFAULT shared assumptions.
-  const seedImplied = marketImpliedGrowthPct(effectiveFcf, marketCap, SCENARIO_PRESETS.shared);
+export default function ScenarioPanel({
+  effectiveFcf, marketCap, currency, shares, costOfEquityPct, terminalPct, years,
+}: Props) {
+  const coe = costOfEquityPct;
+  const terminal = terminalPct;
+  // Seed the growths around the anchor at the assumptions present when this
+  // mounts (parent re-keys by effectiveFcf, so a base change re-seeds). Only the
+  // per-scenario FCF growths are owned here; the shared assumptions are props.
+  const seedImplied = marketImpliedGrowthPct(effectiveFcf, marketCap, {
+    costOfEquity: coe / 100, terminalGrowth: terminal / 100, years,
+  });
   const [growths, setGrowths] = useState(() => seedScenarioGrowths(seedImplied.pct));
-  const [coe, setCoe] = useState(pct(SCENARIO_PRESETS.shared.costOfEquity));
-  const [terminal, setTerminal] = useState(pct(SCENARIO_PRESETS.shared.terminalGrowth));
-  const [years, setYears] = useState(SCENARIO_PRESETS.shared.years);
 
   const setGrowth = (k: ScenarioLabel, v: number) => setGrowths((g) => ({ ...g, [k]: v }));
 
@@ -92,12 +100,6 @@ export default function ScenarioPanel({ effectiveFcf, marketCap, currency, share
         })}
       </div>
 
-      <div className="scenario-shared">
-        <SharedInput label="Cost of equity" value={coe} set={setCoe} min={5} max={20} suffix="%" />
-        <SharedInput label="Terminal growth" value={terminal} set={setTerminal} min={0} max={6} suffix="%" />
-        <SharedInput label="Horizon" value={years} set={setYears} min={5} max={15} suffix="yr" />
-      </div>
-
       {!valid ? (
         <p className="dcf-warn">
           Assumptions out of range — FCF growth −20…100%, cost of equity 5…20%, terminal 0…6% (≥1%
@@ -117,18 +119,5 @@ export default function ScenarioPanel({ effectiveFcf, marketCap, currency, share
           : 'Per-share unavailable — no share count; showing equity value.'}
       </p>
     </section>
-  );
-}
-
-function SharedInput({
-  label, value, set, min, max, suffix
-}: { label: string; value: number; set: (n: number) => void; min: number; max: number; suffix: string }) {
-  return (
-    <label className="scenario-shared-input">
-      <span>{label}</span>
-      <span>
-        <input type="number" value={value} min={min} max={max} onChange={(e) => set(Number(e.target.value))} />{suffix}
-      </span>
-    </label>
   );
 }
