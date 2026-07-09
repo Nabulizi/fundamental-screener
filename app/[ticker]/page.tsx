@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { buildProvider, buildValuationProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { parseTickers } from '@/lib/tickers';
-import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
+import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, SCORING_VERSION, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
+import { marketImpliedGrowthPct, SCENARIO_PRESETS } from '@/lib/dcf';
 import { buildDataProvenance } from '@/lib/provenance';
+import type { SeenMetrics } from '@/lib/seenRecords';
 import { getCachedValuation, setCachedValuation } from '@/lib/valuationCache';
 import { computeDrivers, type ValuationProfile, type ValuationProvider } from '@/lib/valuation';
 import {
@@ -14,6 +16,7 @@ import DriverStrip from '@/components/DriverStrip';
 import FundamentalsTable from '@/components/FundamentalsTable';
 import PeerComparison from '@/components/PeerComparison';
 import DataSources from '@/components/DataSources';
+import ChangeSincePanel from '@/components/ChangeSincePanel';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -75,11 +78,22 @@ export default async function TickerPage({ params }: { params: { ticker: string 
   ].some((v) => v != null);
 
   const scored = scoreRow(row);
+  const isFinancial = isBalanceSheetFinancial(row.ticker, row.industry);
   // Equity FCF yield is Price/FCF based (see types.ts), so absolute FCF ≈ marketCap × yield.
   const fcf0 =
     row.fcfYieldPercent != null && row.marketCap != null
       ? (row.marketCap * row.fcfYieldPercent) / 100
       : null;
+
+  // Current values tracked for "since you last viewed" (implied growth uses the
+  // deterministic TTM base + reference assumptions; gated for financials).
+  const seenCurrent: SeenMetrics = {
+    scoringVersion: SCORING_VERSION,
+    tier: scored.tier, strength: scored.strengthScore, risk: scored.riskScore,
+    marketCap: row.marketCap, fcfYieldPercent: row.fcfYieldPercent,
+    revenueGrowthTTM: row.revenueGrowthTTM, evToEbitda: row.evToEbitda,
+    impliedGrowthPct: isFinancial || fcf0 == null ? null : marketImpliedGrowthPct(fcf0, row.marketCap, SCENARIO_PRESETS.shared).pct,
+  };
 
   const metrics: [string, string][] = [
     ['Market cap', formatMarketCap(row.marketCap, row.currency)],
@@ -118,6 +132,8 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         ))}
       </section>
 
+      <ChangeSincePanel ticker={row.ticker} current={seenCurrent} />
+
       {showDrivers && <DriverStrip drivers={drivers} />}
 
       {profile && profile.history.length > 0 && (
@@ -131,7 +147,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         marketCap={row.marketCap}
         currency={row.currency}
         revenueGrowthTTM={row.revenueGrowthTTM}
-        isFinancial={isBalanceSheetFinancial(row.ticker, row.industry)}
+        isFinancial={isFinancial}
         profile={profile}
         sharesOutstanding={profile?.sharesOutstanding ?? null}
         drivers={drivers}
@@ -146,7 +162,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
           retrievedAt: row.retrievedAt,
           profile,
           fcf0,
-          isFinancial: isBalanceSheetFinancial(row.ticker, row.industry),
+          isFinancial,
           insufficientData: hasInsufficientData(row),
         })}
       />
