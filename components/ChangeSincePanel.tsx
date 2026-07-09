@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  STORAGE_KEY, parseStored, serialize, upsertSeen, findSeen, computeChangeSince,
+  STORAGE_KEY, parseStored, serialize, recordVisit,
   type SeenMetrics, type SeenRecord, type ChangeSummary, type MetricDelta,
 } from '@/lib/seenRecords';
 
@@ -11,15 +11,19 @@ import {
 // (localStorage); renders nothing until the effect runs (no hydration mismatch).
 export default function ChangeSincePanel({ ticker, current }: { ticker: string; current: SeenMetrics }) {
   const [state, setState] = useState<{ change: ChangeSummary; seenAt: string | null } | null>(null);
+  // Strict-Mode / re-invoke guard: the read-prior → write-current visit must run
+  // exactly once per ticker, else the second run reads the just-written record as
+  // the prior and the delta vanishes.
+  const visitedFor = useRef<string | null>(null);
 
   useEffect(() => {
+    if (visitedFor.current === ticker) return;
+    visitedFor.current = ticker;
     let records: SeenRecord[] = [];
     try { records = parseStored(window.localStorage.getItem(STORAGE_KEY)); } catch { /* ignore */ }
-    const prior = findSeen(records, ticker);
-    setState({ change: computeChangeSince(prior, current), seenAt: prior?.seenAt ?? null });
-    // This visit becomes the next baseline.
-    const now: SeenRecord = { ...current, ticker: ticker.toUpperCase(), seenAt: new Date().toISOString() };
-    try { window.localStorage.setItem(STORAGE_KEY, serialize(upsertSeen(records, now))); } catch { /* quota */ }
+    const { change, seenAt, next } = recordVisit(records, ticker, current, new Date().toISOString());
+    setState({ change, seenAt });
+    try { window.localStorage.setItem(STORAGE_KEY, serialize(next)); } catch { /* quota */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker]);
 
