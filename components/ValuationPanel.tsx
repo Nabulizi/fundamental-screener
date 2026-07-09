@@ -76,7 +76,9 @@ export default function ValuationPanel({
     : null;
 
   const currentInputs: CaseInputs | null = valuationActive
-    ? { baseKey, customFcf, discountRate, terminalGrowth: terminal, horizon: years, growths }
+    // Save the base actually IN USE (selectedOpt), not the stale baseKey state —
+    // resolveFcfBase may have fallen back to the first option.
+    ? { baseKey: selectedOpt?.key ?? baseKey, customFcf, discountRate, terminalGrowth: terminal, horizon: years, growths }
     : null;
   const snapshot = valuationActive
     ? { effectiveFcf, impliedFcfGrowthPct: expectations?.impliedPct ?? null, inputs: currentInputs }
@@ -95,7 +97,7 @@ export default function ValuationPanel({
         currentInputs={currentInputs}
         snapshot={snapshot}
         availableBaseKeys={options.map((o) => o.key)}
-        fallbackBaseKey={defaultFcfBaseKey(profile)}
+        fallbackBaseKey={options[0]?.key ?? defaultFcfBaseKey(profile)}
         onApply={applyCase}
       />
       {loadWarnings.map((w, i) => <p key={i} className="hint va-warn">{w}</p>)}

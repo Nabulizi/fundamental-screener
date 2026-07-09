@@ -4,6 +4,8 @@
 // A case stores INPUTS ONLY — never derived outputs — so re-opening always
 // recomputes with the current code and can't show a stale number.
 
+import { scenarioInputsValid } from './dcf';
+
 export type BaseKey = 'ttm' | 'avg3' | 'avg5';
 
 export interface CaseInputs {
@@ -133,6 +135,19 @@ export function parseCaseImport(raw: string): ValuationCase | null {
   return coerceCase(caseLike);
 }
 
+/**
+ * Prepare an imported case for the CURRENT ticker: parse + reject a case whose
+ * ticker doesn't match (never apply a TSLA case to AAPL). Returns the case to be
+ * saved/applied, or a user-facing error.
+ */
+export function prepareImport(raw: string, ticker: string): { case: ValuationCase | null; error: string | null } {
+  const c = parseCaseImport(raw);
+  if (!c) return { case: null, error: 'Not a valid valuation-case export.' };
+  const t = ticker.trim().toUpperCase();
+  if (c.ticker !== t) return { case: null, error: `This case is for ${c.ticker}, not ${t}.` };
+  return { case: c, error: null };
+}
+
 // --- Load guard -------------------------------------------------------------
 
 export interface ResolvedLoad {
@@ -159,9 +174,18 @@ export function resolveCaseLoad(
   if (!c.inputs) return { inputs: null, warnings };
 
   let inputs = c.inputs;
-  if (!availableBaseKeys.includes(c.inputs.baseKey)) {
+  // Base availability: fall back to an ACTUALLY-available key (the passed
+  // fallback may itself be unavailable), never a crash or silent substitution.
+  if (!availableBaseKeys.includes(inputs.baseKey)) {
+    const fb = availableBaseKeys.includes(fallbackBaseKey) ? fallbackBaseKey : availableBaseKeys[0];
     warnings.push('Saved FCF base unavailable with current data.');
-    inputs = { ...c.inputs, baseKey: fallbackBaseKey };
+    inputs = fb ? { ...inputs, baseKey: fb } : inputs;
+  }
+  // Assumption validity: never apply values that would crash the DCF (e.g. a
+  // horizon of 0 → intrinsicDcf throws). Reuse the render-path validity check.
+  if (!scenarioInputsValid(inputs.growths, inputs.discountRate, inputs.terminalGrowth, inputs.horizon)) {
+    warnings.push('Saved assumptions are out of range — not applied.');
+    return { inputs: null, warnings };
   }
   return { inputs, warnings };
 }
