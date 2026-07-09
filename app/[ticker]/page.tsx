@@ -125,6 +125,8 @@ export default async function TickerPage({ params }: { params: { ticker: string 
       )}
 
       <ValuationPanel
+        ticker={row.ticker}
+        retrievedAt={row.retrievedAt}
         fcf0={fcf0}
         marketCap={row.marketCap}
         currency={row.currency}

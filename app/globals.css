@@ -1008,6 +1008,23 @@ tr.row-weak:hover { background: var(--panel-2); }
 .ft-flagged { color: #fbbf24; }
 .ft-flag { cursor: help; }
 
+.vc { margin-top: 2rem; }
+.vc h2 { margin: 0 0 0.4rem; font-size: 1.15rem; }
+.vc-save { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
+.vc-save input[type="text"] { flex: 1 1 200px; padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; }
+.vc-import { position: relative; overflow: hidden; display: inline-flex; align-items: center; }
+.vc-import input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.vc-note { width: 100%; min-height: 56px; resize: vertical; padding: 0.5rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: inherit; }
+.vc-list { list-style: none; margin: 0.75rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.vc-list li { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.7rem; flex-wrap: wrap; }
+.vc-item { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.vc-name { font-weight: 600; }
+.vc-meta { color: var(--muted); font-size: 0.72rem; }
+.vc-note-preview { color: var(--muted); font-size: 0.82rem; }
+.vc-actions { display: flex; gap: 0.4rem; }
+.va-reset { margin: 0.5rem 0; }
+.va-warn { color: #fbbf24; }
+
 .va-assumptions { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; margin: 1.25rem 0 0.25rem; }
 .va-assumptions .dcf-slider { min-width: 180px; }
 
