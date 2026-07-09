@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { SCORING_VERSION } from '@/lib/scoring';
 import { useValuationCases } from '@/lib/useValuationCases';
 import {
-  newCase, casesForTicker, buildCaseExport, parseCaseImport, resolveCaseLoad,
+  newCase, casesForTicker, buildCaseExport, prepareImport, resolveCaseLoad,
   type CaseInputs, type BaseKey, type ValuationCase, type ResolvedLoad,
 } from '@/lib/valuationCases';
 
@@ -55,11 +55,15 @@ export default function ValuationCases({
     download(`${ticker}-valuation-case.json`, JSON.stringify(buildCaseExport(c, snapshot), null, 2));
   };
   const doImport = async (file: File) => {
-    const c = parseCaseImport(await file.text());
-    if (!c) { setImportErr('Not a valid valuation-case export.'); return; }
+    const { case: c, error } = prepareImport(await file.text(), ticker);
+    if (!c) { setImportErr(error); return; }
     setImportErr(null);
+    // Save the imported case for THIS ticker (fresh id, original metadata + version),
+    // then apply it — so it appears in the list, not just applied transiently.
+    const saved = newCase({ ticker, name: c.name, note: c.note, retrievedAt: c.retrievedAt, inputs: c.inputs, scoringVersion: c.scoringVersion, savedAt: c.savedAt });
+    save(saved);
     setNote(c.note);
-    onApply(resolveCaseLoad(c, SCORING_VERSION, availableBaseKeys, fallbackBaseKey));
+    onApply(resolveCaseLoad(saved, SCORING_VERSION, availableBaseKeys, fallbackBaseKey));
   };
 
   return (
