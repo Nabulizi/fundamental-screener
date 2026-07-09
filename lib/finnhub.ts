@@ -105,6 +105,7 @@ export function normalizeFinnhub(
   return {
     ticker,
     companyName: toText(profile.name),
+    source: 'finnhub',
     industry: toText(profile.finnhubIndustry),
     // Documented as millions; convert to raw currency units.
     marketCap: marketCapMillions == null ? null : marketCapMillions * 1_000_000,

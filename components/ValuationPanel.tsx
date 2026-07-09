@@ -113,6 +113,14 @@ export default function ValuationPanel({
             <p className="dcf-warn">Terminal growth must be at least 1% below the discount rate.</p>
           )}
 
+          {/* Live DCF-input provenance — reads the selected base directly, so it
+              always matches what the valuation below is using (surface A). */}
+          <p className="hint">
+            DCF inputs — FCF base in use: <strong>{selectedOpt.label}</strong>{' '}
+            (~{formatMarketCap(effectiveFcf, currency)}); history:{' '}
+            {profile?.source ? `reported, ${profile.history.length}y` : 'unavailable (TTM only)'}.
+          </p>
+
           <MarketExpectationsCard
             model={buildMarketExpectations({
               effectiveFcf,

@@ -48,6 +48,12 @@ export interface ScanRow {
   rangePosition?: number | null;
   /** True when this row was served from the server cache rather than freshly fetched. */
   cached?: boolean;
+  /**
+   * Provider that produced this row (row-level provenance, not per-metric).
+   * Optional for back-compat: snapshots written before this field lack it and
+   * read back as undefined. `alphavantage` rows carry thinner data (FCF N/A).
+   */
+  source?: 'finnhub' | 'alphavantage' | null;
   /** ISO timestamp of when this row's data was actually retrieved from the provider. */
   retrievedAt: string;
 }

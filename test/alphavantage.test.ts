@@ -33,6 +33,7 @@ describe('normalizeAlphaVantage', () => {
     expect(row.trailingPE).toBe(25.4);
     expect(row.dividendYieldPercent).toBeCloseTo(3.05, 5); // 0.0305 -> 3.05%
     expect(row.currentPrice).toBe(69.2);
+    expect(row.source).toBe('alphavantage');
     expect(row.week52High).toBe(73.5);
   });
 
