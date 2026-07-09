@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import {
-  computeScenarios, isInvertedRange, scenarioInputsValid, marketImpliedGrowthPct, seedScenarioGrowths,
+  computeScenarios, isInvertedRange, scenarioInputsValid, marketImpliedGrowthPct,
   type ScenarioLabel,
 } from '@/lib/dcf';
 import { formatCurrency, formatMarketCap } from '@/lib/format';
@@ -19,29 +18,23 @@ interface Props {
   costOfEquityPct: number;
   terminalPct: number;
   years: number;
+  /** Per-scenario FCF growths — OWNED by ValuationPanel (so a saved case owns the
+   *  whole state); this panel is a readout/editor. */
+  growths: { bear: number; base: number; bull: number };
+  onGrowth: (k: ScenarioLabel, v: number) => void;
 }
 
 const LABELS: Record<ScenarioLabel, string> = { bear: 'Bear', base: 'Base', bull: 'Bull' };
 
 // Assumption-driven value-per-share RANGE, anchored to the reverse-DCF
-// market-implied FCF growth: Base starts at what's priced in, Bear/Bull are
-// ±10pp around it. Answers "what if FCF growth is below / near / above what the
-// market already implies?" No upside/downside, current-price comparison, or
-// green/red verdicts. Parent keys this by effectiveFcf, so a base change re-seeds.
+// market-implied FCF growth. No upside/downside, current-price comparison, or
+// green/red verdicts. Growths are owned by the parent (single case owner).
 export default function ScenarioPanel({
-  effectiveFcf, marketCap, currency, shares, costOfEquityPct, terminalPct, years,
+  effectiveFcf, marketCap, currency, shares, costOfEquityPct, terminalPct, years, growths, onGrowth,
 }: Props) {
   const coe = costOfEquityPct;
   const terminal = terminalPct;
-  // Seed the growths around the anchor at the assumptions present when this
-  // mounts (parent re-keys by effectiveFcf, so a base change re-seeds). Only the
-  // per-scenario FCF growths are owned here; the shared assumptions are props.
-  const seedImplied = marketImpliedGrowthPct(effectiveFcf, marketCap, {
-    costOfEquity: coe / 100, terminalGrowth: terminal / 100, years,
-  });
-  const [growths, setGrowths] = useState(() => seedScenarioGrowths(seedImplied.pct));
-
-  const setGrowth = (k: ScenarioLabel, v: number) => setGrowths((g) => ({ ...g, [k]: v }));
+  const setGrowth = onGrowth;
 
   // Live anchor uses the SCENARIO's own shared assumptions (not reverse-DCF state).
   const anchor = marketImpliedGrowthPct(effectiveFcf, marketCap, {

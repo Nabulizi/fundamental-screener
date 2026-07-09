@@ -3,13 +3,17 @@
 import { useState } from 'react';
 import { fcfBaseOptions, defaultFcfBaseKey, resolveFcfBase, type FcfBaseKey, type ValuationProfile, type Drivers } from '@/lib/valuation';
 import { buildMarketExpectations } from '@/lib/marketExpectations';
-import { SCENARIO_PRESETS } from '@/lib/dcf';
+import { SCENARIO_PRESETS, marketImpliedGrowthPct, seedScenarioGrowths, type ScenarioLabel } from '@/lib/dcf';
 import { formatMarketCap } from '@/lib/format';
+import type { CaseInputs, ResolvedLoad } from '@/lib/valuationCases';
 import DcfPanel from './DcfPanel';
 import ScenarioPanel from './ScenarioPanel';
 import MarketExpectationsCard from './MarketExpectationsCard';
+import ValuationCases from './ValuationCases';
 
 interface Props {
+  ticker: string;
+  retrievedAt: string;
   /** TTM base FCF (raw currency units), or null when unavailable / non-positive. */
   fcf0: number | null;
   marketCap: number | null;
@@ -24,141 +28,171 @@ interface Props {
   drivers: Drivers | null;
 }
 
-// Owns the shared FCF-base selection so the reverse-DCF and scenario panels
-// consume ONE effectiveFcf (no duplicated selector). The financial gate and the
-// no-positive-base fallback live here — preserving Phase-2 behavior exactly.
 const asPct = (d: number) => Math.round(d * 100);
 
+// Single owner of the whole valuation "case": FCF base, custom FCF, shared
+// assumptions, AND the scenario growths — so a saved case is one snapshot and
+// loading it just sets state. Financial gate + no-positive-base fallback here.
 export default function ValuationPanel({
-  fcf0, marketCap, currency, revenueGrowthTTM, isFinancial, profile, sharesOutstanding, drivers,
+  ticker, retrievedAt, fcf0, marketCap, currency, revenueGrowthTTM, isFinancial, profile, sharesOutstanding, drivers,
 }: Props) {
   const [baseKey, setBaseKey] = useState<FcfBaseKey>(() => defaultFcfBaseKey(profile));
   const [customFcf, setCustomFcf] = useState<number | null>(null);
-  // SHARED valuation assumptions (single source of truth) — so the market-
-  // expectations card, reverse DCF, and scenario anchor never show conflicting
-  // "market-implied growth" numbers. Percent / whole-year units.
   const [discountRate, setDiscountRate] = useState(asPct(SCENARIO_PRESETS.shared.costOfEquity));
   const [terminal, setTerminal] = useState(asPct(SCENARIO_PRESETS.shared.terminalGrowth));
   const [years, setYears] = useState(SCENARIO_PRESETS.shared.years);
-  const shared = { costOfEquity: discountRate / 100, terminalGrowth: terminal / 100, years };
-  const assumptionsValid = terminal <= discountRate - 1; // ≥100bps spread
+  const [growths, setGrowths] = useState(() => {
+    const opts = fcfBaseOptions(profile, fcf0);
+    const dflt = opts.find((o) => o.key === defaultFcfBaseKey(profile)) ?? opts[0];
+    const initFcf = dflt?.value ?? fcf0 ?? 0;
+    return seedScenarioGrowths(marketImpliedGrowthPct(initFcf, marketCap, SCENARIO_PRESETS.shared).pct);
+  });
+  const [loadWarnings, setLoadWarnings] = useState<string[]>([]);
 
-  if (isFinancial) {
-    return (
-      <section className="dcf">
-        <h2>What&rsquo;s priced in? (reverse DCF)</h2>
-        <p className="hint">
-          A cash-flow DCF isn&rsquo;t meaningful for financials — a bank or broker&rsquo;s cash flow is
-          driven by customer balances and balance-sheet movements, not operating earnings (the same
-          reason the scorecard neutralizes FCF criteria here). Informational only.
-        </p>
-      </section>
-    );
-  }
+  const setGrowth = (k: ScenarioLabel, v: number) => setGrowths((g) => ({ ...g, [k]: v }));
+
+  const applyCase = (r: ResolvedLoad) => {
+    setLoadWarnings(r.warnings);
+    if (r.inputs) {
+      setBaseKey(r.inputs.baseKey);
+      setCustomFcf(r.inputs.customFcf);
+      setDiscountRate(r.inputs.discountRate);
+      setTerminal(r.inputs.terminalGrowth);
+      setYears(r.inputs.horizon);
+      setGrowths(r.inputs.growths);
+    }
+  };
 
   const options = fcfBaseOptions(profile, fcf0);
-  const resolved = resolveFcfBase(options, baseKey, customFcf);
-  if (!resolved) {
-    return (
-      <section className="dcf">
-        <h2>What&rsquo;s priced in? (reverse DCF)</h2>
-        <p className="hint">
-          A reverse DCF needs positive free cash flow. Neither trailing-twelve-month nor multi-year
-          normalized FCF is positive here, so it isn&rsquo;t meaningful — informational only.
-        </p>
-      </section>
-    );
-  }
+  const resolved = isFinancial ? null : resolveFcfBase(options, baseKey, customFcf);
+  const effectiveFcf = resolved?.effectiveFcf ?? null;
+  const selectedOpt = resolved?.option ?? null;
+  const shared = { costOfEquity: discountRate / 100, terminalGrowth: terminal / 100, years };
+  const assumptionsValid = terminal <= discountRate - 1; // ≥100bps spread
+  const valuationActive = resolved != null && (effectiveFcf ?? 0) > 0;
 
-  const { option: selectedOpt, effectiveFcf } = resolved;
-  const hasSelector = options.length > 1;
+  const expectations = valuationActive
+    ? buildMarketExpectations({ effectiveFcf: effectiveFcf!, marketCap, shared, drivers, revenueGrowthTTM: revenueGrowthTTM ?? null })
+    : null;
+
+  const currentInputs: CaseInputs | null = valuationActive
+    ? { baseKey, customFcf, discountRate, terminalGrowth: terminal, horizon: years, growths }
+    : null;
+  const snapshot = valuationActive
+    ? { effectiveFcf, impliedFcfGrowthPct: expectations?.impliedPct ?? null, inputs: currentInputs }
+    : null;
+
   const chooseBase = (k: FcfBaseKey) => { setBaseKey(k); setCustomFcf(null); };
+  const resetToImplied = () => {
+    if (valuationActive) setGrowths(seedScenarioGrowths(marketImpliedGrowthPct(effectiveFcf!, marketCap, shared).pct));
+  };
 
   return (
     <>
-      {hasSelector && (
-        <div className="dcf-base">
-          <span className="dcf-label">FCF base</span>
-          <div className="dcf-base-btns">
-            {options.map((o) => (
-              <button
-                key={o.key}
-                type="button"
-                className={`dcf-base-btn${o.key === selectedOpt.key && customFcf == null ? ' active' : ''}`}
-                onClick={() => chooseBase(o.key)}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <label className="dcf-adjust">
-            adjust ($)
-            <input type="number" value={Math.round(effectiveFcf)} onChange={(e) => setCustomFcf(Number(e.target.value))} />
-            <span className="dcf-unit">≈ {formatMarketCap(effectiveFcf, currency)}</span>
-          </label>
-        </div>
-      )}
+      <ValuationCases
+        ticker={ticker}
+        retrievedAt={retrievedAt}
+        currentInputs={currentInputs}
+        snapshot={snapshot}
+        availableBaseKeys={options.map((o) => o.key)}
+        fallbackBaseKey={defaultFcfBaseKey(profile)}
+        onApply={applyCase}
+      />
+      {loadWarnings.map((w, i) => <p key={i} className="hint va-warn">{w}</p>)}
 
-      {effectiveFcf > 0 ? (
-        <>
-          {/* Shared assumptions — ONE control set drives the card, reverse DCF,
-              and scenario anchor, so they can never disagree. */}
-          <div className="va-assumptions">
-            <span className="dcf-label">Assumptions</span>
-            <Slider label="Discount rate" value={discountRate} set={setDiscountRate} min={5} max={20} suffix="%" />
-            <Slider label="Terminal growth" value={terminal} set={setTerminal} min={0} max={6} suffix="%" />
-            <Slider label="Horizon" value={years} set={setYears} min={5} max={15} suffix="yr" />
-          </div>
-          {!assumptionsValid && (
-            <p className="dcf-warn">Terminal growth must be at least 1% below the discount rate.</p>
-          )}
-
-          {/* Live DCF-input provenance — reads the selected base directly, so it
-              always matches what the valuation below is using (surface A). */}
-          <p className="hint">
-            DCF inputs — FCF base in use: <strong>{selectedOpt.label}</strong>{' '}
-            (~{formatMarketCap(effectiveFcf, currency)}); history:{' '}
-            {profile?.source ? `reported, ${profile.history.length}y` : 'unavailable (TTM only)'}.
-          </p>
-
-          <MarketExpectationsCard
-            model={buildMarketExpectations({
-              effectiveFcf,
-              marketCap,
-              shared,
-              drivers,
-              revenueGrowthTTM: revenueGrowthTTM ?? null,
-            })}
-          />
-          <DcfPanel
-            effectiveFcf={effectiveFcf}
-            baseLabel={selectedOpt.label}
-            marketCap={marketCap}
-            currency={currency}
-            revenueGrowthTTM={revenueGrowthTTM}
-            discountRate={discountRate}
-            terminal={terminal}
-            years={years}
-          />
-          {/* key by the base so switching FCF base re-seeds the growths around
-              the new anchor; changing shared assumptions moves the live anchor via
-              props without wiping the user's growth edits. */}
-          <ScenarioPanel
-            key={effectiveFcf}
-            effectiveFcf={effectiveFcf}
-            marketCap={marketCap}
-            currency={currency}
-            shares={sharesOutstanding}
-            costOfEquityPct={discountRate}
-            terminalPct={terminal}
-            years={years}
-          />
-        </>
-      ) : (
+      {isFinancial ? (
         <section className="dcf">
           <h2>What&rsquo;s priced in? (reverse DCF)</h2>
-          <p className="dcf-warn">Base FCF must be positive.</p>
+          <p className="hint">
+            A cash-flow DCF isn&rsquo;t meaningful for financials — a bank or broker&rsquo;s cash flow is
+            driven by customer balances and balance-sheet movements, not operating earnings (the same
+            reason the scorecard neutralizes FCF criteria here). Informational only.
+          </p>
         </section>
+      ) : !resolved ? (
+        <section className="dcf">
+          <h2>What&rsquo;s priced in? (reverse DCF)</h2>
+          <p className="hint">
+            A reverse DCF needs positive free cash flow. Neither trailing-twelve-month nor multi-year
+            normalized FCF is positive here, so it isn&rsquo;t meaningful — informational only.
+          </p>
+        </section>
+      ) : (
+        <>
+          {options.length > 1 && (
+            <div className="dcf-base">
+              <span className="dcf-label">FCF base</span>
+              <div className="dcf-base-btns">
+                {options.map((o) => (
+                  <button
+                    key={o.key}
+                    type="button"
+                    className={`dcf-base-btn${o.key === selectedOpt?.key && customFcf == null ? ' active' : ''}`}
+                    onClick={() => chooseBase(o.key)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              <label className="dcf-adjust">
+                adjust ($)
+                <input type="number" value={Math.round(effectiveFcf ?? 0)} onChange={(e) => setCustomFcf(Number(e.target.value))} />
+                <span className="dcf-unit">≈ {formatMarketCap(effectiveFcf, currency)}</span>
+              </label>
+            </div>
+          )}
+
+          {valuationActive ? (
+            <>
+              <div className="va-assumptions">
+                <span className="dcf-label">Assumptions</span>
+                <Slider label="Discount rate" value={discountRate} set={setDiscountRate} min={5} max={20} suffix="%" />
+                <Slider label="Terminal growth" value={terminal} set={setTerminal} min={0} max={6} suffix="%" />
+                <Slider label="Horizon" value={years} set={setYears} min={5} max={15} suffix="yr" />
+              </div>
+              {!assumptionsValid && (
+                <p className="dcf-warn">Terminal growth must be at least 1% below the discount rate.</p>
+              )}
+
+              <p className="hint">
+                DCF inputs — FCF base in use: <strong>{selectedOpt!.label}</strong>{' '}
+                (~{formatMarketCap(effectiveFcf, currency)}); history:{' '}
+                {profile?.source ? `reported, ${profile.history.length}y` : 'unavailable (TTM only)'}.
+              </p>
+
+              <MarketExpectationsCard model={expectations!} />
+              <DcfPanel
+                effectiveFcf={effectiveFcf!}
+                baseLabel={selectedOpt!.label}
+                marketCap={marketCap}
+                currency={currency}
+                revenueGrowthTTM={revenueGrowthTTM}
+                discountRate={discountRate}
+                terminal={terminal}
+                years={years}
+              />
+              <div className="va-reset">
+                <button type="button" className="secondary" onClick={resetToImplied}>Reset scenarios to implied growth</button>
+              </div>
+              <ScenarioPanel
+                effectiveFcf={effectiveFcf!}
+                marketCap={marketCap}
+                currency={currency}
+                shares={sharesOutstanding}
+                costOfEquityPct={discountRate}
+                terminalPct={terminal}
+                years={years}
+                growths={growths}
+                onGrowth={setGrowth}
+              />
+            </>
+          ) : (
+            <section className="dcf">
+              <h2>What&rsquo;s priced in? (reverse DCF)</h2>
+              <p className="dcf-warn">Base FCF must be positive.</p>
+            </section>
+          )}
+        </>
       )}
     </>
   );
