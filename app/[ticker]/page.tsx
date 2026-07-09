@@ -3,7 +3,6 @@ import { buildProvider, buildValuationProvider, cacheTtlSeconds } from '@/lib/bu
 import { scanTickers } from '@/lib/scan';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, SCORING_VERSION, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
-import { marketImpliedGrowthPct, SCENARIO_PRESETS } from '@/lib/dcf';
 import { buildDataProvenance } from '@/lib/provenance';
 import type { SeenMetrics } from '@/lib/seenRecords';
 import { getCachedValuation, setCachedValuation } from '@/lib/valuationCache';
@@ -85,14 +84,13 @@ export default async function TickerPage({ params }: { params: { ticker: string 
       ? (row.marketCap * row.fcfYieldPercent) / 100
       : null;
 
-  // Current values tracked for "since you last viewed" (implied growth uses the
-  // deterministic TTM base + reference assumptions; gated for financials).
+  // Single-basis metrics tracked for "since you last viewed" (implied growth is
+  // excluded — it's base/assumption-dependent; see seenRecords).
   const seenCurrent: SeenMetrics = {
     scoringVersion: SCORING_VERSION,
     tier: scored.tier, strength: scored.strengthScore, risk: scored.riskScore,
     marketCap: row.marketCap, fcfYieldPercent: row.fcfYieldPercent,
     revenueGrowthTTM: row.revenueGrowthTTM, evToEbitda: row.evToEbitda,
-    impliedGrowthPct: isFinancial || fcf0 == null ? null : marketImpliedGrowthPct(fcf0, row.marketCap, SCENARIO_PRESETS.shared).pct,
   };
 
   const metrics: [string, string][] = [

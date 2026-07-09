@@ -4,6 +4,10 @@
 
 import type { SignalTier } from './scoring';
 
+// Only metrics with a SINGLE, deterministic basis are tracked. Market-implied
+// FCF growth is intentionally excluded: it depends on the user-selected FCF base
+// and editable assumptions in the valuation UI, so tracking a server-side
+// TTM/preset value would create a second basis for the same number (see #28).
 export interface SeenMetrics {
   scoringVersion: number;
   tier: SignalTier;
@@ -13,8 +17,6 @@ export interface SeenMetrics {
   fcfYieldPercent: number | null;
   revenueGrowthTTM: number | null;
   evToEbitda: number | null;
-  /** Market-implied FCF growth (%), TTM-base — null when unavailable/gated. */
-  impliedGrowthPct: number | null;
 }
 
 export interface SeenRecord extends SeenMetrics {
@@ -26,7 +28,7 @@ export const STORAGE_KEY = 'stock-scanner.seenRecords.v1';
 const SCHEMA_VERSION = 1;
 
 export interface MetricDelta {
-  key: 'fcfYield' | 'revenueGrowth' | 'evEbitda' | 'impliedGrowth';
+  key: 'fcfYield' | 'revenueGrowth' | 'evEbitda';
   label: string;
   from: number | null;
   to: number | null;
@@ -58,7 +60,6 @@ export function computeChangeSince(prior: SeenRecord | null, current: SeenMetric
     { key: 'fcfYield', label: 'FCF yield', from: prior?.fcfYieldPercent ?? null, to: current.fcfYieldPercent, delta: delta(prior?.fcfYieldPercent ?? null, current.fcfYieldPercent), unit: 'pp' },
     { key: 'revenueGrowth', label: 'Revenue growth', from: prior?.revenueGrowthTTM ?? null, to: current.revenueGrowthTTM, delta: delta(prior?.revenueGrowthTTM ?? null, current.revenueGrowthTTM), unit: 'pp' },
     { key: 'evEbitda', label: 'EV/EBITDA', from: prior?.evToEbitda ?? null, to: current.evToEbitda, delta: delta(prior?.evToEbitda ?? null, current.evToEbitda), unit: 'x' },
-    { key: 'impliedGrowth', label: 'Market-implied FCF growth', from: prior?.impliedGrowthPct ?? null, to: current.impliedGrowthPct, delta: delta(prior?.impliedGrowthPct ?? null, current.impliedGrowthPct), unit: 'pp' },
   ];
 
   if (!prior) {
@@ -111,7 +112,6 @@ function coerce(x: unknown): SeenRecord | null {
     tier, strength: num(o.strength) ?? 0, risk: num(o.risk) ?? 0,
     marketCap: num(o.marketCap), fcfYieldPercent: num(o.fcfYieldPercent),
     revenueGrowthTTM: num(o.revenueGrowthTTM), evToEbitda: num(o.evToEbitda),
-    impliedGrowthPct: num(o.impliedGrowthPct),
   };
 }
 
@@ -133,4 +133,19 @@ export function findSeen(records: SeenRecord[], ticker: string): SeenRecord | nu
 /** Replace the record for the ticker (one per ticker). */
 export function upsertSeen(records: SeenRecord[], record: SeenRecord): SeenRecord[] {
   return [...records.filter((r) => r.ticker !== record.ticker), record];
+}
+
+/**
+ * A single "visit": compute the delta vs the prior record, then produce the
+ * next store with THIS visit as the new baseline. Pure. The caller must invoke
+ * it exactly once per view — running it twice would read the just-written record
+ * as the prior and lose the delta (the Strict-Mode hazard the panel guards).
+ */
+export function recordVisit(
+  records: SeenRecord[], ticker: string, current: SeenMetrics, nowIso: string
+): { change: ChangeSummary; seenAt: string | null; next: SeenRecord[] } {
+  const prior = findSeen(records, ticker);
+  const change = computeChangeSince(prior, current);
+  const next = upsertSeen(records, { ...current, ticker: ticker.toUpperCase(), seenAt: nowIso });
+  return { change, seenAt: prior?.seenAt ?? null, next };
 }
