@@ -22,6 +22,7 @@ function row(ticker: string, source: string): ScanRow {
     evToEbitda: null,
     currentPrice: 1.5,
     rangePosition: 0.5,
+    source: source as ScanRow['source'],
     retrievedAt: '2026-06-19T00:00:00.000Z'
   };
 }
@@ -51,6 +52,7 @@ describe('createFallbackProvider', () => {
 
     const out = await fb.fetchCompany('AAPL');
     expect(out.companyName).toContain('alphavantage');
+    expect(out.source).toBe('alphavantage'); // the winning provider's source survives failover
     expect(backup.fn).toHaveBeenCalledOnce();
   });
 

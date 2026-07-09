@@ -46,8 +46,9 @@ export default function DataSources({ model }: { model: DataProvenance }) {
 
       <p className="hint">
         As-reported (from the provider): revenue, operating cash flow, capex, shares, price, and the
-        raw multiples. Computed by this tool: free cash flow (OCF − capex), margins, FCF yield, the
-        market-implied growth, the scenarios, and the score — informational, not verdicts.
+        raw multiples. Computed by this tool (when the inputs are available): free cash flow
+        (OCF − capex), margins, FCF / FCF yield, the market-implied growth, the scenarios, and the
+        score — informational, not verdicts.
       </p>
     </section>
   );
