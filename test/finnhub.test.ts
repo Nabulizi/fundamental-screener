@@ -18,6 +18,7 @@ describe('normalizeFinnhub', () => {
     expect(row.trailingPE).toBe(31.2);
     expect(row.dividendYieldPercent).toBe(0.41);
     expect(row.retrievedAt).toBe(AT);
+    expect(row.source).toBe('finnhub');
   });
 
   it('preserves a genuine 0% dividend yield (non-payer), not null', () => {

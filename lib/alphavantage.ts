@@ -88,6 +88,7 @@ export function normalizeAlphaVantage(
   return {
     ticker,
     companyName: avText(overview?.Name),
+    source: 'alphavantage',
     industry: avText(overview?.Industry) ?? avText(overview?.Sector),
     // Alpha Vantage reports market cap in RAW units already (no x1e6).
     marketCap: avNumber(overview?.MarketCapitalization),

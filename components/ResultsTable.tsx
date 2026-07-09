@@ -41,6 +41,10 @@ function IdentityCell({ row, freshness }: { row: ScanRow; freshness: Freshness }
         {/* Hide the badge for fresh rows so "FRESH" doesn't repeat down every
             row; only cached/stale rows get a badge. Legend above explains all. */}
         {freshness !== 'fresh' && <FreshnessBadge freshness={freshness} />}
+        {/* Flag only the failover source (thinner data); Finnhub is the norm. */}
+        {row.source === 'alphavantage' && (
+          <span className="src-av" title="Alpha Vantage (failover) — thinner data (FCF N/A)">AV</span>
+        )}
       </div>
       <div className="identity-company" title={company !== NA ? company : undefined}>
         {company === NA ? <span className="na">{NA}</span> : company}
