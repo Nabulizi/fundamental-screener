@@ -408,6 +408,11 @@ export function classifyFinancialModel(
  * they never diverge. (The revenue-growth suspect bound in sanitizeGrowthValue
  * deliberately stays on the label regex — it guards a provider label artifact,
  * not the economic model.)
+ *
+ * We intentionally show NO sector-native replacement (P/B, ROE, FFO, combined
+ * ratio, CET1, …) for these names: a provider-capability check found the data is
+ * mostly absent or extraction-ambiguous. See docs/sector-coverage.md (and
+ * `npm run probe -- --sector`) for the evidence and what would be required first.
  */
 export function isBalanceSheetFinancial(
   ticker: string | null | undefined,

@@ -340,9 +340,83 @@ async function probeValuation(key, writeFixtures) {
   console.log('  (Confirm the field map above before writing lib/valuationProvider.ts — do not assume.)');
 }
 
+// ---------------------------------------------------------------------------
+// Sector-native capability probe (roadmap #7). Evidence for docs/sector-coverage.md:
+// are P/B, ROE, book value, and clean equity / net-income concepts actually
+// available for real banks/insurers/REITs? Guards the known hazards — the
+// StockholdersEquity vs LiabilitiesAndStockholdersEquity collision and the
+// custom net-income namespace (e.g. amb_ for some REITs).
+//
+//   npm run probe -- --sector
+// ---------------------------------------------------------------------------
+
+const SECTOR_TICKERS = [['JPM', 'Banks'], ['BAC', 'Banks'], ['USB', 'Banks'], ['MET', 'Insurance'], ['O', 'REIT']];
+
+function latestAnnual(reportedBody) {
+  const data = reportedBody?.data;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const annual = data.filter((e) => e?.quarter === 0).sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+  return annual[0] ?? null;
+}
+function findReportRow(entry, sections, pred) {
+  for (const sec of sections) {
+    for (const r of entry?.report?.[sec] ?? []) {
+      if (pred(r.concept ?? '')) return { concept: r.concept, value: r.value };
+    }
+  }
+  return null;
+}
+
+async function probeSector(key) {
+  console.log('Sector-native capability probe — evidence only, NO UI is built from this.\n');
+  const agg = { pb: 0, roe: 0, cleanEquity: 0, netIncome: 0, total: SECTOR_TICKERS.length };
+
+  for (const [t, sector] of SECTOR_TICKERS) {
+    console.log(`=== ${t} (${sector}) ===`);
+    const m = await getJsonSafe(`/stock/metric?symbol=${t}&metric=all`, key);
+    const rep = await getJsonSafe(`/stock/financials-reported?symbol=${t}&freq=annual`, key);
+    const metric = m.ok ? m.body?.metric ?? {} : {};
+
+    show('metric=all status', statusLabel(m));
+    show('  pbAnnual', metric['pbAnnual'] ?? '(missing)');
+    show('  roeTTM', metric['roeTTM'] ?? '(missing)');
+    show('  bookValuePerShareAnnual', metric['bookValuePerShareAnnual'] ?? '(missing)');
+    if (metric['pbAnnual'] != null) agg.pb++;
+    if (metric['roeTTM'] != null) agg.roe++;
+
+    const entry = rep.ok ? latestAnnual(rep.body) : null;
+    // Clean equity: exactly StockholdersEquity, NOT the total L+E, NOT the
+    // "IncludingPortionAttributableToNoncontrollingInterest" variant.
+    const eqClean = entry && findReportRow(entry, ['bs'],
+      (c) => /(^|_)StockholdersEquity$/.test(c) && !/LiabilitiesAnd/.test(c) && !/IncludingPortion/i.test(c));
+    const eqTotalOnly = entry && findReportRow(entry, ['bs'], (c) => /LiabilitiesAndStockholdersEquity$/.test(c));
+    const ni = entry && findReportRow(entry, ['ic'], (c) => /NetIncomeLoss/i.test(c));
+
+    show('financials-reported', statusLabel(rep) + (entry ? ` (FY ${entry.year})` : ''));
+    show('  clean equity', eqClean ? `${eqClean.concept} = ${eqClean.value}`
+      : eqTotalOnly ? `NONE — only total ${eqTotalOnly.concept} (COLLISION)` : 'NOT FOUND');
+    show('  net income', ni ? `${ni.concept} = ${ni.value}${ni.concept.startsWith('us-gaap_') ? '' : '  (⚠ non-us-gaap namespace)'}` : 'NOT FOUND');
+    if (eqClean) agg.cleanEquity++;
+    if (ni && ni.concept.startsWith('us-gaap_')) agg.netIncome++;
+    console.log('');
+  }
+
+  console.log('=== RECOMMENDATION ===');
+  const clean = agg.pb === agg.total && agg.roe === agg.total && agg.cleanEquity === agg.total && agg.netIncome === agg.total;
+  if (clean) {
+    console.log('  P/B + ROE follow-up VIABLE — pb/roe present in metric=all AND clean equity + us-gaap');
+    console.log('  net income resolvable for every probed financial. Revisit docs/sector-coverage.md.');
+  } else {
+    console.log(`  DO NOT BUILD sector UI — pb ${agg.pb}/${agg.total}, roe ${agg.roe}/${agg.total}, clean`);
+    console.log(`  equity ${agg.cleanEquity}/${agg.total}, us-gaap net income ${agg.netIncome}/${agg.total}.`);
+    console.log('  Missing/ambiguous fields make P/B or ROE unreliable. See docs/sector-coverage.md.');
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const valuationMode = args.includes('--valuation');
+  const sectorMode = args.includes('--sector');
   const writeFixtures = args.includes('--write-fixtures');
 
   await loadEnvLocal();
@@ -357,6 +431,12 @@ async function main() {
   if (valuationMode) {
     console.log('FINNHUB_API_KEY detected (value hidden).');
     await probeValuation(key, writeFixtures);
+    return;
+  }
+
+  if (sectorMode) {
+    console.log('FINNHUB_API_KEY detected (value hidden).');
+    await probeSector(key);
     return;
   }
 
