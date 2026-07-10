@@ -23,6 +23,8 @@ import PeerComparison from '@/components/PeerComparison';
 import DataSources from '@/components/DataSources';
 import ChangeSincePanel from '@/components/ChangeSincePanel';
 import SnapshotHistoryPanel from '@/components/SnapshotHistoryPanel';
+import Explain from '@/components/Explain';
+import { tierGloss } from '@/lib/explain/glosses';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -154,6 +156,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
             Strength {scored.strengthScore}/{MAX_STRENGTH} · Risk {scored.riskScore}/{MAX_RISK}
           </span>
         </div>
+        <Explain gloss={tierGloss(scored.tier, scored.strengthScore, scored.riskScore)} />
       </header>
 
       <section className="metrics-grid">

@@ -2,6 +2,8 @@
 
 import { impliedGrowth } from '@/lib/dcf';
 import { formatMarketCap } from '@/lib/format';
+import Explain from '@/components/Explain';
+import { reverseDcfGloss } from '@/lib/explain/glosses';
 
 interface Props {
   /** The selected FCF base (raw currency units), guaranteed positive by ValuationPanel. */
@@ -54,6 +56,7 @@ export default function DcfPanel({
         base (~{formatMarketCap(effectiveFcf, currency)}), this is the annual FCF growth the market is
         implying at the assumptions above. Informational only — a market-implied assumption, not a target.
       </p>
+      <Explain gloss={reverseDcfGloss()} />
 
       {!valid ? (
         <p className="dcf-warn">Discount rate must exceed terminal growth.</p>
