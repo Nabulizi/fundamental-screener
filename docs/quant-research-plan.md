@@ -78,6 +78,11 @@ survivorship-free backtest likely needs a **paid** delisted price/return source
 EDGAR loader until the price source is decided; restatement-safe fundamentals
 joined to missing delisted prices is still a biased backtest.
 
+Vendor comparison + a one-month validation protocol (acceptance test = terminal
+returns on TWTR/CELG/ATVI/XLNX/LEH, not "has delisted tickers") live in
+`price-vendor-recon.md`. Evaluation order: CRSP/WRDS if you have access →
+Sharadar → Polygon spike → Norgate (Windows friction).
+
 ## The original gate
 
 - **>1 `filedDate` for a fiscal year** → real point-in-time is available. Build

@@ -1,0 +1,127 @@
+# Delisted-price vendor recon + one-month validation protocol
+
+Decision-grade note for the quant research path (see `quant-research-plan.md`).
+The project is at a **data-purchase/validation decision**, not an implementation
+decision. Do NOT build another loader until a vendor passes the trial below.
+
+## The acceptance test is TERMINAL RETURNS, not "has delisted tickers"
+
+Every vendor's marketing says "survivorship-bias-free / includes delisted
+securities." That is necessary but **not** sufficient. A backtest needs the
+*return*, and for a dead company the single largest return is the terminal event:
+
+- **cash merger** → stock stops, holder receives $X/share cash
+- **stock merger** → holder receives N shares of the acquirer
+- **cash+stock+CVR** → messy hybrid (contingent value rights can expire worthless)
+- **bankruptcy** → common equity → ~0 (−100%)
+
+Free sources (Yahoo/Stooq) give price bars up to the last trading day and drop
+this leg — the most important return goes missing. **A vendor only passes if the
+terminal return is recoverable.** Marketing pages cannot prove this; only a trial
+pull of known-dead tickers can. Hence every terminal-return cell below that isn't
+explicitly documented is marked **"must verify in trial."**
+
+## Comparison matrix
+
+Legend: **Yes** (documented) · **No** (documented absent) · **MV** (must verify in
+trial — not clearly documented) · **Partial**. Pricing is approximate (≈2025–26),
+**confirm at purchase**.
+
+| Axis | CRSP / WRDS | Sharadar (Nasdaq Data Link) | Polygon | Norgate |
+|---|---|---|---|---|
+| Delisted daily prices | Yes | Yes (SEP) | Yes (`active=false`, `delisted_utc`) | Yes (Platinum/Diamond) |
+| Adjusted total-return series | **Yes** (RET incl. dividends) | Yes (split/div-adjusted) | Partial (split-adj; div via separate endpoint; TR self-built) | Yes (div-adjusted / TR options) |
+| **Cash merger encoded in return** | **Yes** (DLRET) | MV | **No** (not modeled as a return) | MV (designed for it) |
+| **Stock merger encoded in return** | **Yes** (DLRET/acquirer link) | MV | **No** | MV |
+| **Bankruptcy wipeout encoded (−100%)** | **Yes** (delisting code + DLRET) | MV | **No** (bars just stop) | MV |
+| Historical constituents / PIT universe | **Yes** (S&P membership via CRSP/Compustat) | MV (not a documented core feature) | No (reconstruct from ticker snapshots) | **Yes** (index constituents to 1990) |
+| PIT fundamentals | Yes (via Compustat PIT/Snapshot) | **Yes** (SF1, `datekey`, dimensions) | Partial (financials vX, `filing_date`; MV as-first-reported) | No / minimal |
+| Python / macOS usability | Yes (`wrds` pkg, cloud Postgres) | **Yes** (`nasdaqdatalink`, pure API) | **Yes** (REST + official client) | **Windows-bound** (NDU desktop app req; macOS ⇒ VM/Wine) |
+| Cost / trial | Institutional only; free *if* you have university access | ≈$40–50/mo bundle (verify); sample tables free | Free tier (limited, likely excludes delisted); paid ≈$29–199/mo by tier | Annual sub; **3-week free trial** |
+
+### Per-vendor notes (the nuance the table can't hold)
+
+- **CRSP/WRDS** — the gold standard and the *only* vendor where terminal returns
+  are a documented first-class feature: `DLRET` (delisting return) explicitly
+  encodes merger/liquidation/bankruptcy final value, and delisting codes classify
+  the event. Purpose-built for survivorship-free research. **Only viable if you
+  have university/library WRDS access** — then it's free to you and wins outright.
+  No personal trial otherwise. Fundamentals come via Compustat (confirm you have
+  the PIT/Snapshot product, not the restated back-file).
+- **Sharadar** — best *friction* profile for a macOS/Python solo user: pure API,
+  no Windows, and it bundles survivorship-free prices (SEP) with genuinely PIT
+  fundamentals (SF1 keyed on `datekey` = availability date — directly solves the
+  restatement problem EDGAR spike was working around). Two real unknowns: (1)
+  whether the **terminal return** is recoverable (SEP prices + the ACTIONS table
+  may require you to construct it — MV), (2) historical index membership is not a
+  documented core feature (MV). If terminal returns pass, this is likely the pick.
+- **Polygon** — best pure-API/macOS ergonomics, but **weakest on the axis that
+  matters**: it models splits and dividends, not merger consideration or
+  bankruptcy value, so the terminal leg is *not* encoded and would be self-built
+  from external corporate-action data. Use only as a cheap API spike if Sharadar
+  is unavailable. ("Massive" — unverified as a distinct vendor; do not rely on it
+  without confirming it exists and is survivorship-free.)
+- **Norgate** — excellent survivorship-free data and the best **historical index
+  constituents** (S&P membership to 1990), and it's *designed* for survivorship-free
+  backtesting — so terminal handling is plausibly good, but still MV in trial.
+  **Dealbreaker for you: Windows-only** (the `norgatedata` Python package needs the
+  Norgate Data Updater desktop app running). On macOS that's a Windows VM just to
+  evaluate. Minimal fundamentals.
+
+## Recommended evaluation order
+
+1. **Check CRSP/WRDS access first.** Any current/alumni university or library
+   affiliation? If yes → use it, it's free to you and the gold standard. Stop here.
+2. **If no CRSP → Sharadar.** Verify *current* pricing, access, and trial/sample
+   terms on Nasdaq Data Link, then run the trial protocol below. Lowest friction,
+   both data legs, macOS-native.
+3. **Polygon** only as a cheap API spike if Sharadar is unavailable — and go in
+   knowing you'll likely have to build the terminal-return leg yourself.
+4. **Norgate** only if a Windows VM is acceptable friction (its constituent-history
+   strength may justify it for index-membership work later).
+
+## One-month validation protocol
+
+Goal: spend ≤ one month and ≤ one subscription to answer a single yes/no —
+**"can this vendor give me an honest total return, including the terminal event,
+for dead companies?"** Not "does it have the tickers."
+
+1. **Access** — get the trial/first-month + a Python key for exactly ONE vendor
+   (per the order above). No parallel subscriptions.
+2. **Resolve** — pull the 5 test tickers by the vendor's *permanent* identifier
+   (CRSP permno / Sharadar ticker+permaticker / Polygon ticker+`delisted_utc` /
+   Norgate symbol). Confirm each resolves and is flagged delisted.
+3. **Series** — pull the full adjusted daily series for each. Confirm the final
+   bar sits at/near the real delisting date (below), not years early.
+4. **Terminal-return acceptance test** — for each ticker, compute the total return
+   of holding from ~1 month before the event through settlement, and check it
+   against the known ground truth. **This is the pass/fail gate.**
+5. **Universe check (secondary)** — ask the vendor for S&P 500 membership as of
+   2015-06-30 and confirm it includes names since removed. (CRSP/Norgate: expected
+   Yes; Sharadar/Polygon: MV.)
+6. **Fundamentals check (secondary)** — pull FY2018 revenue for AAPL and confirm
+   it's keyed to the *filing/availability* date, not restated (CRSP-Compustat PIT /
+   Sharadar SF1 `datekey`).
+7. **Decide** — vendor passes only if step 4 passes for the cash, stock, and
+   bankruptcy cases. If it fails, cancel before renewal and try the next in order.
+   If none pass affordably → document that an honest survivorship-free backtest is
+   not economically feasible at this budget, and stop (the Finnhub v0 plumbing
+   harness remains the ceiling).
+
+## Terminal-return trial checklist (ground truth)
+
+Hold the checker to the *right answer* — a vendor that returns a clean price series
+but the wrong terminal return fails.
+
+| Ticker | Event & date | Consideration | Correct terminal return | Pass criterion |
+|---|---|---|---|---|
+| **TWTR** | Cash merger (Musk), closed 2022-10-27 | $54.20/share cash | Converges to $54.20 then cash settlement | Final return reflects $54.20 cash-out, not a series that just stops |
+| **ATVI** | Cash merger (Microsoft), closed 2023-10-13 | $95.00/share cash | Converges to $95.00 cash | Terminal ≈ hold-to-$95 cash |
+| **XLNX** | **Stock** merger (AMD), closed 2022-02-14 | 1.7234 AMD shares per XLNX | Value of 1.7234 × AMD price at close (then tracks AMD, or clean exit value) | Terminal return = acquirer-share value, NOT "stopped trading" |
+| **CELG** | Cash+stock+**CVR** merger (BMY), closed 2019-11-20 | $50.00 cash + 1 BMY share + 1 CVR | $50 + BMY share value + CVR (CVR later expired worthless 2021) | Stress case: how is the hybrid/CVR handled? Document, don't assume |
+| **LEH / LEHMQ** | **Bankruptcy**, filed 2008-09-15 | Common equity wiped out | ≈ −100% | Terminal ≈ −100%, not a truncated series near the pre-collapse price |
+
+Coverage: cash merger (TWTR, ATVI), stock merger (XLNX), cash+stock+CVR (CELG),
+bankruptcy wipeout (LEH). A vendor that encodes all four correctly is survivorship-
+free *in returns*, which is the actual requirement. Anything less is a price
+archive with the most important returns missing.
