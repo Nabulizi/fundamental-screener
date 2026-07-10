@@ -10,7 +10,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('.', import.meta.url))
+      '@': fileURLToPath(new URL('.', import.meta.url)),
+      // `server-only`'s Node entry throws by design; in tests load its no-op
+      // stub so server-only modules (lib/store) can be exercised directly.
+      'server-only': 'server-only/empty.js'
     }
   },
   // Use React's automatic JSX runtime so component tests don't need `import React`.

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Store, SnapshotRecord } from './index';
 import type { SignalTier } from '../scoring';
@@ -35,10 +35,15 @@ function fromDb(r: SnapshotRow): SnapshotRecord {
   };
 }
 
-export function createSqliteStore(dbPath?: string): Store {
+export function createSqliteStore(dbPath?: string, jsonlPath?: string): Store {
   const require = createRequire(import.meta.url);
   const Database = require('better-sqlite3') as new (p: string) => Db;
-  const db = new Database(dbPath ?? path.join(process.cwd(), 'data', 'screener.db'));
+  const dbFile = dbPath ?? path.join(process.cwd(), 'data', 'screener.db');
+  // data/ is gitignored, so a fresh clone has no parent dir → better-sqlite3
+  // would throw "directory does not exist" and durable snapshots would stay
+  // disabled for the whole process. Create it first.
+  mkdirSync(path.dirname(dbFile), { recursive: true });
+  const db = new Database(dbFile);
   db.pragma('journal_mode = WAL');
   db.exec(`CREATE TABLE IF NOT EXISTS snapshots (
     ticker TEXT NOT NULL, day TEXT NOT NULL, scoring_version INTEGER NOT NULL,
@@ -61,7 +66,7 @@ export function createSqliteStore(dbPath?: string): Store {
 
   // One-time, idempotent import of the pre-existing JSONL history (kept on disk
   // as a backup — never deleted). INSERT OR IGNORE makes a re-run a no-op.
-  importJsonlOnce(db, put, dbPath);
+  importJsonlOnce(db, put, dbPath, jsonlPath);
 
   return {
     async putSnapshot(s) { put(s); },
@@ -73,12 +78,14 @@ export function createSqliteStore(dbPath?: string): Store {
   };
 }
 
-function importJsonlOnce(db: Db, put: (s: SnapshotRecord) => void, dbPath?: string) {
-  if (dbPath && dbPath !== path.join(process.cwd(), 'data', 'screener.db')) return; // skip for temp test DBs
+function importJsonlOnce(db: Db, put: (s: SnapshotRecord) => void, dbPath?: string, jsonlPath?: string) {
+  // Skip auto-import for temp test DBs UNLESS an explicit JSONL source is given
+  // (the import-behavior test passes both a temp DB and a temp JSONL).
+  if (!jsonlPath && dbPath && dbPath !== path.join(process.cwd(), 'data', 'screener.db')) return;
   const done = db.prepare('SELECT value FROM meta WHERE key = ?').get('jsonl_imported');
   if (done) return;
   try {
-    const raw = readFileSync(path.join(process.cwd(), 'data', 'snapshots.jsonl'), 'utf8');
+    const raw = readFileSync(jsonlPath ?? path.join(process.cwd(), 'data', 'snapshots.jsonl'), 'utf8');
     const records: SnapshotRecord[] = [];
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue;
