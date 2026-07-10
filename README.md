@@ -89,6 +89,8 @@ Other scripts:
 
 ```bash
 npm run probe      # live Finnhub field-map probe (needs FINNHUB_API_KEY)
+npm run probe -- --pit  # financials-reported PIT/versioning probe
+npm run export:pit # raw financials-reported export for PIT v0 backtest
 npm test           # unit tests
 npm run typecheck  # tsc --noEmit
 npm run lint       # next lint

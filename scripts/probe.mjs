@@ -206,6 +206,86 @@ function analyzeReported(body) {
   };
 }
 
+function annualReportedEntries(body) {
+  const data = body?.data;
+  return Array.isArray(data)
+    ? data.filter((e) => e?.quarter === 0 && typeof e?.year === 'number')
+    : [];
+}
+
+function shortDate(value) {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 10) : 'missing';
+}
+
+function analyzeReportedPit(body) {
+  const entries = annualReportedEntries(body);
+  if (entries.length === 0) return null;
+
+  const byYear = new Map();
+  const filedDates = [];
+  for (const e of entries) {
+    const year = e.year;
+    const filed = shortDate(e.filedDate);
+    const ended = shortDate(e.endDate);
+    if (filed !== 'missing') filedDates.push(filed);
+    if (!byYear.has(year)) {
+      byYear.set(year, { rows: 0, filedDates: new Set(), endDates: new Set(), filingKeys: new Set() });
+    }
+    const rec = byYear.get(year);
+    rec.rows += 1;
+    rec.filedDates.add(filed);
+    rec.endDates.add(ended);
+    rec.filingKeys.add(`${filed}|${ended}`);
+  }
+
+  const years = [...byYear.keys()].sort((a, b) => a - b);
+  filedDates.sort();
+  const perYear = years.map((year) => ({ year, ...byYear.get(year) }));
+  const multiFiledYears = perYear.filter((r) => r.filedDates.size > 1);
+  const duplicateSameFilingYears = perYear.filter((r) => r.rows > r.filingKeys.size);
+
+  return {
+    annualRows: entries.length,
+    years,
+    fiscalSpan: `${years[0]}-${years[years.length - 1]}`,
+    filedSpan: filedDates.length ? `${filedDates[0]} -> ${filedDates[filedDates.length - 1]}` : 'missing',
+    perYear,
+    multiFiledYears,
+    duplicateSameFilingYears,
+    maxFiledVersions: Math.max(...perYear.map((r) => r.filedDates.size)),
+    maxRowsPerYear: Math.max(...perYear.map((r) => r.rows)),
+  };
+}
+
+function yearList(rows, limit = 8) {
+  const labels = rows
+    .slice()
+    .sort((a, b) => b.year - a.year)
+    .slice(0, limit)
+    .map((r) => `FY${r.year}`);
+  return labels.join(', ') + (rows.length > limit ? ` +${rows.length - limit} more` : '');
+}
+
+function showPitSummary(body) {
+  const pit = analyzeReportedPit(body);
+  if (!pit) {
+    show('reported PIT span', 'no annual rows');
+    return null;
+  }
+
+  show('reported PIT span', `${pit.annualRows} annual rows, FY ${pit.fiscalSpan}, filed ${pit.filedSpan}`);
+  show('filed versions/FY', pit.multiFiledYears.length
+    ? `yes (${yearList(pit.multiFiledYears)} have >1 filedDate)`
+    : 'no evidence (one filedDate per fiscal year in this response)');
+  show('duplicate same-filing rows', pit.duplicateSameFilingYears.length
+    ? `yes (${yearList(pit.duplicateSameFilingYears)} repeat same filedDate/endDate; not restatement versions)`
+    : 'no');
+  show('PIT interpretation', pit.multiFiledYears.length
+    ? 'versioned filings observed; select latest filedDate <= as-of date'
+    : 'dated history only; can gate by filedDate, but restatement-safety is unproven');
+  return pit;
+}
+
 // All concept+label strings across a financials-reported entry's cf/ic/bs (for keyword evidence).
 function reportedConcepts(body) {
   const data = body?.data;
@@ -316,6 +396,10 @@ async function probeValuation(key, writeFixtures) {
     show('diluted shares', F ? yn(F.dilutedShares) : 'unknown');
     show('cash', F ? yn(F.cash) : 'unknown');
     show('total debt', F ? F.debt : 'unknown');
+    if (got['financials-reported']?.ok) {
+      console.log('  --- financials-reported PIT/versioning ---');
+      showPitSummary(got['financials-reported'].body);
+    }
     console.log('');
   }
 
@@ -338,6 +422,68 @@ async function probeValuation(key, writeFixtures) {
   }
   if (agg.capexSign.size) console.log(`  Capex sign convention observed: ${[...agg.capexSign].join(' / ')}.`);
   console.log('  (Confirm the field map above before writing lib/valuationProvider.ts — do not assume.)');
+}
+
+// ---------------------------------------------------------------------------
+// Point-in-time fundamentals probe. This is the narrow backtest blocker:
+// does /stock/financials-reported return dated annual history, and does it
+// include multiple filed versions per fiscal year or only one current view?
+//
+//   npm run probe -- --pit
+// ---------------------------------------------------------------------------
+
+const PIT_TICKERS = ['AAPL', 'MSFT', 'AMZN', 'GOOG', 'META', 'NVDA', 'JPM', 'XOM', 'MCD', 'WMT', 'MU', 'AVGO', 'PLD', 'HOOD', 'RIVN'];
+
+async function probePit(key) {
+  console.log('Point-in-time fundamentals probe — financials-reported only.\n');
+  const agg = {
+    ok: 0,
+    multiFiled: 0,
+    duplicateSameFiling: 0,
+    earliestFiled: null,
+    latestFiled: null,
+    maxRowsPerYear: 0,
+  };
+
+  for (const t of PIT_TICKERS) {
+    console.log(`=== ${t} ===`);
+    const r = await getJsonSafe(`/stock/financials-reported?symbol=${t}&freq=annual`, key);
+    show('financials-reported', statusLabel(r));
+    if (!r.ok || !r.body) {
+      console.log('');
+      continue;
+    }
+
+    const pit = showPitSummary(r.body);
+    if (pit) {
+      agg.ok += 1;
+      if (pit.multiFiledYears.length) agg.multiFiled += 1;
+      if (pit.duplicateSameFilingYears.length) agg.duplicateSameFiling += 1;
+      agg.maxRowsPerYear = Math.max(agg.maxRowsPerYear, pit.maxRowsPerYear);
+      const [earliest, latest] = pit.filedSpan.split(' -> ');
+      if (earliest !== 'missing' && (!agg.earliestFiled || earliest < agg.earliestFiled)) agg.earliestFiled = earliest;
+      if (latest !== 'missing' && (!agg.latestFiled || latest > agg.latestFiled)) agg.latestFiled = latest;
+    }
+    console.log('');
+  }
+
+  console.log('=== PIT VERDICT ===');
+  console.log(`  financials-reported answered for ${agg.ok}/${PIT_TICKERS.length} tickers.`);
+  if (agg.ok) {
+    console.log(`  Filed-date span observed: ${agg.earliestFiled ?? 'missing'} -> ${agg.latestFiled ?? 'missing'}.`);
+    console.log(`  Tickers with >1 filedDate for a fiscal year: ${agg.multiFiled}/${agg.ok}.`);
+    console.log(`  Tickers with repeated same-filing annual rows: ${agg.duplicateSameFiling}/${agg.ok}.`);
+  }
+  if (agg.multiFiled > 0) {
+    console.log('  True versioning appears present in at least one response. A backtest loader can store');
+    console.log('  all annual rows and select the latest filedDate <= each rebalance date.');
+  } else if (agg.ok > 0) {
+    console.log('  Dated annual history is present, but this probe did NOT observe multiple filedDates');
+    console.log('  for the same fiscal year. That is enough to prevent pre-filing lookahead, but not');
+    console.log('  enough to prove restatement-safe point-in-time fundamentals.');
+  } else {
+    console.log('  No usable annual reported history observed. Fundamental backtest data remains blocked.');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +563,7 @@ async function main() {
   const args = process.argv.slice(2);
   const valuationMode = args.includes('--valuation');
   const sectorMode = args.includes('--sector');
+  const pitMode = args.includes('--pit');
   const writeFixtures = args.includes('--write-fixtures');
 
   await loadEnvLocal();
@@ -431,6 +578,12 @@ async function main() {
   if (valuationMode) {
     console.log('FINNHUB_API_KEY detected (value hidden).');
     await probeValuation(key, writeFixtures);
+    return;
+  }
+
+  if (pitMode) {
+    console.log('FINNHUB_API_KEY detected (value hidden).');
+    await probePit(key);
     return;
   }
 

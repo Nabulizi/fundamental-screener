@@ -22,10 +22,20 @@ npm run typecheck  # tsc --noEmit
 npm run lint       # next lint
 npm run build      # production build
 npm run probe      # live provider field-map check (needs keys in .env.local)
+npm run probe -- --pit  # financials-reported PIT/versioning check
+npm run export:pit # raw financials-reported export for should-i-trade PIT v0
 ```
 
 Before claiming work is done, run `npm test`, `npm run typecheck`, `npm run lint`,
 and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`).
+
+## Research / backtest
+
+`npm run probe -- --pit` found deep dated annual history but **no multiple
+filed versions per fiscal year**, so Finnhub is not restatement-safe PIT. The
+current path is a caveated v0 plumbing harness: run `npm run export:pit` here,
+then `python3 pit_backtest.py` in `../should-i-trade`. Full decision, caveats,
+and harness location live in `docs/quant-research-plan.md`.
 
 ## Architecture
 
