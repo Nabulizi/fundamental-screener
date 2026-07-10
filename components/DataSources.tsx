@@ -1,3 +1,4 @@
+import { formatMarketCap, formatCurrency, formatPe, formatPercent } from '@/lib/format';
 import type { DataProvenance } from '@/lib/provenance';
 import type { CrossCheck, CrossCheckField } from '@/lib/crossCheck';
 
@@ -6,16 +7,25 @@ const SOURCE_LABEL: Record<'finnhub' | 'alphavantage', string> = {
   alphavantage: 'Alpha Vantage (failover)',
 };
 
-function crossCheckText(f: CrossCheckField): string {
+function fmtValue(f: CrossCheckField, v: number | null, currency: string | null): string {
+  switch (f.key) {
+    case 'marketCap': return formatMarketCap(v, currency);
+    case 'currentPrice': return formatCurrency(v, currency);
+    case 'trailingPE': return formatPe(v);
+    case 'dividendYieldPercent': return formatPercent(v);
+  }
+}
+
+function crossCheckText(f: CrossCheckField, currency: string | null): string {
   if (f.status === 'unavailable') return 'not comparable (a source is missing it)';
   if (f.status === 'agree') return `agrees (within ${f.pctDiff != null ? (f.pctDiff * 100).toFixed(1) : '0'}%)`;
-  return `differs — ${f.primary} vs ${f.secondary}${f.pctDiff != null ? ` (${(f.pctDiff * 100).toFixed(0)}%)` : ''}`;
+  return `differs — ${fmtValue(f, f.primary, currency)} vs ${fmtValue(f, f.secondary, currency)}${f.pctDiff != null ? ` (${(f.pctDiff * 100).toFixed(0)}%)` : ''}`;
 }
 
 // Static "Data & sources" block — provider, freshness, coverage, and a
 // reported-vs-computed legend. No score, no color, no per-metric badges. The
 // live "FCF base in use" is shown with the valuation UI, not here.
-export default function DataSources({ model, crossCheck }: { model: DataProvenance; crossCheck: CrossCheck }) {
+export default function DataSources({ model, crossCheck, currency }: { model: DataProvenance; crossCheck: CrossCheck; currency: string | null }) {
   const sourceText = model.source ? SOURCE_LABEL[model.source] : 'Unknown';
   const freshness = model.cached
     ? `Cached, as of ${new Date(model.retrievedAt).toLocaleString()}`
@@ -59,7 +69,7 @@ export default function DataSources({ model, crossCheck }: { model: DataProvenan
           <dd>
             <ul className="ds-xcheck-list">
               {crossCheck.fields.map((f) => (
-                <li key={f.key}><span className="ds-xcheck-label">{f.label}:</span> {crossCheckText(f)}</li>
+                <li key={f.key}><span className="ds-xcheck-label">{f.label}:</span> {crossCheckText(f, currency)}</li>
               ))}
             </ul>
             <span className="hint">A shallow second-source check on surface fields only — not the FCF, growth, or history the valuation uses.</span>
