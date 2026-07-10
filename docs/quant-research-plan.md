@@ -53,6 +53,31 @@ the thing Finnhub cannot. Method deliberately avoids the `/api/xbrl/frames` API
 first (next spike). Fundamentals without matching delisted prices cannot produce
 an honest return series, so the loader is premature until prices are sourced.
 
+## Delisted price feasibility spike result
+
+Ran `should-i-trade/delisted_price_spike.py` against 5 dead names (TWTR, LEHMQ,
+CELG, ATVI, XLNX) on free sources. The diagnostic distinguishes "source blocked"
+from "symbol absent" (and Yahoo now maps HTTP 404 → absent, network → blocked) so
+the verdict can't misread an access failure as missing data.
+
+- **Yahoo = structural NO.** AAPL control returns normal data; the acquired names
+  (TWTR/ATVI/XLNX/CELG) return HTTP 404 "symbol may be delisted", and LEHMQ
+  returns HTTP 200 with an empty payload. Yahoo purges delisted symbols — it
+  cannot supply survivorship-free history.
+- **Stooq = HONESTLY UNKNOWN.** Its CSV endpoint returns HTML even for live
+  `aapl.us` in the test environment (blocked/rate-limited), so Stooq was never
+  actually queried. Not ruled out — but not proven either. Testing it needs a
+  different access path (`stooq.pl`, referer/cookie, or slower requests).
+- **The hard part remains regardless:** even if Stooq resolves, free daily CSV is
+  *unadjusted* and does not encode the acquisition cash-out / bankruptcy terminal
+  return — the exact leg a survivorship-free backtest needs.
+
+**Verdict: free delisted price data is not proven viable.** An honest
+survivorship-free backtest likely needs a **paid** delisted price/return source
+— Sharadar SEP (cheap end, pairs with SF1), or CRSP / Norgate. Do NOT build the
+EDGAR loader until the price source is decided; restatement-safe fundamentals
+joined to missing delisted prices is still a biased backtest.
+
 ## The original gate
 
 - **>1 `filedDate` for a fiscal year** → real point-in-time is available. Build
