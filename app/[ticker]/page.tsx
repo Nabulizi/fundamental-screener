@@ -65,13 +65,12 @@ export default async function TickerPage({ params }: { params: { ticker: string 
   const valuationProvider = buildValuationProvider();
   const secondaryProvider = buildSecondaryProvider();
 
-  // Scorecard row (required) + valuation history + independent AV cross-check,
-  // all in parallel. allSettled so a failing/absent optional fetch can NEVER take
-  // down the page.
-  const [scanSettled, valSettled, secSettled] = await Promise.allSettled([
+  // Scorecard row (required) + valuation history in parallel. allSettled so a
+  // failing/absent valuation fetch can NEVER take down the page. The AV
+  // cross-check fetch is deliberately NOT in this batch — see below.
+  const [scanSettled, valSettled] = await Promise.allSettled([
     scanTickers([symbol], provider, { ttlSeconds: ttl }),
     valuationProvider ? loadValuation(symbol, valuationProvider, ttl) : Promise.resolve(null),
-    secondaryProvider ? loadSecondary(symbol, secondaryProvider, ttl) : Promise.resolve(null),
   ]);
 
   if (scanSettled.status === 'rejected') {
@@ -84,7 +83,15 @@ export default async function TickerPage({ params }: { params: { ticker: string 
     return <Shell><p className="message">Couldn&rsquo;t load {symbol}{err ? ` — ${err.message}` : '.'}</p></Shell>;
   }
   const profile = valSettled.status === 'fulfilled' ? valSettled.value : null;
-  const secondaryRow = secSettled.status === 'fulfilled' ? secSettled.value : null;
+
+  // AV cross-check fetch runs ONLY once the primary source is known to be
+  // non-AV — otherwise a Finnhub failure that already failed over to AV would
+  // burn a second AV call for the same ticker, then be suppressed anyway. AV
+  // quota is tight; the small serial latency is the right trade.
+  let secondaryRow = null;
+  if (secondaryProvider && row.source !== 'alphavantage') {
+    try { secondaryRow = await loadSecondary(symbol, secondaryProvider, ttl); } catch { secondaryRow = null; }
+  }
   const crossCheck = buildCrossCheck({ primary: row, secondary: secondaryRow, hasSecondaryProvider: secondaryProvider != null });
   const drivers = profile ? computeDrivers(profile) : null;
   const showDrivers = drivers != null && [
@@ -180,6 +187,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
           insufficientData: hasInsufficientData(row),
         })}
         crossCheck={crossCheck}
+        currency={row.currency}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>
