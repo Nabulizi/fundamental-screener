@@ -53,6 +53,16 @@ and `npm run build` — CI runs all four on push/PR (`.github/workflows/ci.yml`)
   git-ignored): first fresh result per ticker per local day, raw row + score
   computed at write time + `SCORING_VERSION` stamp. `recordSnapshots` NEVER
   throws; disable with `SNAPSHOTS_DISABLED=1`. Summary: `npm run snapshots`.
+- `lib/store/` — durable snapshot store behind an **async** `Store` interface
+  (`index.ts`) so a Turso/Postgres adapter can drop in later. `sqlite.ts` is the
+  local better-sqlite3 adapter (`data/screener.db`, git-ignored), `require`d
+  LAZILY so a native-load failure is caught: `getStore()` returns `null` and
+  durable snapshots silently disable — scans/pages never break. The JSONL file
+  stays the backup; `importJsonlOnce` seeds the DB from it (idempotent).
+  `recordSnapshots` writes to BOTH when passed a store. `lib/snapshotHistory.ts`
+  (pure) selects the comparison snapshot (closest at/before ~30 days, else oldest
+  prior) and reuses `computeChangeSince`; rendered by `components/SnapshotHistoryPanel`
+  as the objective "vs ~N days ago" complement to the client "since you last viewed".
 - `lib/circuitBreaker.ts` — per-ticker failure tracking; skips after 3 failures
   for 60 s cooldown.
 - `lib/fearGreed.ts` + `app/api/feargreed/route.ts` — CNN Fear & Greed badge.
