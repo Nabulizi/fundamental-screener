@@ -3,6 +3,7 @@ import { parseTickers, DEFAULT_MAX_TICKERS } from '@/lib/tickers';
 import { buildProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { recordSnapshots } from '@/lib/snapshotStore';
+import { getStore } from '@/lib/store';
 import type { ScanError, ScanResponse } from '@/lib/types';
 
 // The Finnhub key is read here, server-side only. This module is never bundled
@@ -59,7 +60,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const result = await scanTickers(parsed.valid, provider, { ttlSeconds, refresh: body.refresh === true });
     // Longitudinal scan history (first fresh result per ticker per day).
     // recordSnapshots never throws; a snapshot failure never fails the scan.
-    await recordSnapshots(result.rows);
+    await recordSnapshots(result.rows, { store: getStore() });
     const response: ScanResponse = {
       ...result,
       errors: [...invalidErrors, ...result.errors],

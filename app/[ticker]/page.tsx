@@ -7,6 +7,9 @@ import type { QuoteProvider } from '@/lib/provider';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, SCORING_VERSION, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import { buildDataProvenance } from '@/lib/provenance';
+import { recordSnapshots } from '@/lib/snapshotStore';
+import { getStore } from '@/lib/store';
+import { buildSnapshotHistory } from '@/lib/snapshotHistory';
 import type { SeenMetrics } from '@/lib/seenRecords';
 import { getCachedValuation, setCachedValuation } from '@/lib/valuationCache';
 import { computeDrivers, type ValuationProfile, type ValuationProvider } from '@/lib/valuation';
@@ -19,6 +22,7 @@ import FundamentalsTable from '@/components/FundamentalsTable';
 import PeerComparison from '@/components/PeerComparison';
 import DataSources from '@/components/DataSources';
 import ChangeSincePanel from '@/components/ChangeSincePanel';
+import SnapshotHistoryPanel from '@/components/SnapshotHistoryPanel';
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -116,6 +120,14 @@ export default async function TickerPage({ params }: { params: { ticker: string 
     revenueGrowthTTM: row.revenueGrowthTTM, evToEbitda: row.evToEbitda,
   };
 
+  // Durable snapshot: record this view (so single-ticker users build history too),
+  // then read prior snapshots for the server-longitudinal "vs N days ago" panel.
+  // getStore() is null when durable storage is unavailable → the panel just hides.
+  const store = getStore();
+  await recordSnapshots([row], { store });
+  const snapshots = store ? await store.getSnapshots(row.ticker, 400).catch(() => []) : [];
+  const snapshotHistory = buildSnapshotHistory(snapshots, seenCurrent, Date.now());
+
   const metrics: [string, string][] = [
     ['Market cap', formatMarketCap(row.marketCap, row.currency)],
     ['Price', formatCurrency(row.currentPrice ?? null, row.currency)],
@@ -154,6 +166,8 @@ export default async function TickerPage({ params }: { params: { ticker: string 
       </section>
 
       <ChangeSincePanel ticker={row.ticker} current={seenCurrent} />
+
+      {snapshotHistory && <SnapshotHistoryPanel change={snapshotHistory.change} ageDays={snapshotHistory.ageDays} />}
 
       {showDrivers && <DriverStrip drivers={drivers} />}
 
