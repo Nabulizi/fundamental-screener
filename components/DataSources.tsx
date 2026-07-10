@@ -1,14 +1,21 @@
 import type { DataProvenance } from '@/lib/provenance';
+import type { CrossCheck, CrossCheckField } from '@/lib/crossCheck';
 
 const SOURCE_LABEL: Record<'finnhub' | 'alphavantage', string> = {
   finnhub: 'Finnhub',
   alphavantage: 'Alpha Vantage (failover)',
 };
 
+function crossCheckText(f: CrossCheckField): string {
+  if (f.status === 'unavailable') return 'not comparable (a source is missing it)';
+  if (f.status === 'agree') return `agrees (within ${f.pctDiff != null ? (f.pctDiff * 100).toFixed(1) : '0'}%)`;
+  return `differs — ${f.primary} vs ${f.secondary}${f.pctDiff != null ? ` (${(f.pctDiff * 100).toFixed(0)}%)` : ''}`;
+}
+
 // Static "Data & sources" block — provider, freshness, coverage, and a
 // reported-vs-computed legend. No score, no color, no per-metric badges. The
 // live "FCF base in use" is shown with the valuation UI, not here.
-export default function DataSources({ model }: { model: DataProvenance }) {
+export default function DataSources({ model, crossCheck }: { model: DataProvenance; crossCheck: CrossCheck }) {
   const sourceText = model.source ? SOURCE_LABEL[model.source] : 'Unknown';
   const freshness = model.cached
     ? `Cached, as of ${new Date(model.retrievedAt).toLocaleString()}`
@@ -43,6 +50,22 @@ export default function DataSources({ model }: { model: DataProvenance }) {
       {model.insufficientData && (
         <p className="hint">Scorecard floored to Weak — insufficient data coverage for this ticker.</p>
       )}
+
+      <div className="ds-xcheck">
+        <dt>Cross-check (Alpha Vantage)</dt>
+        {!crossCheck.available ? (
+          <dd className="hint">{crossCheck.reason}</dd>
+        ) : (
+          <dd>
+            <ul className="ds-xcheck-list">
+              {crossCheck.fields.map((f) => (
+                <li key={f.key}><span className="ds-xcheck-label">{f.label}:</span> {crossCheckText(f)}</li>
+              ))}
+            </ul>
+            <span className="hint">A shallow second-source check on surface fields only — not the FCF, growth, or history the valuation uses.</span>
+          </dd>
+        )}
+      </div>
 
       <p className="hint">
         As-reported (from the provider): revenue, operating cash flow, capex, shares, price, and the

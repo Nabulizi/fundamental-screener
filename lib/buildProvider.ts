@@ -44,6 +44,15 @@ export function buildValuationProvider(): ValuationProvider | null {
   return key ? createFinnhubValuationProvider(key) : null;
 }
 
+/**
+ * Independent secondary provider (Alpha Vantage only) for the detail-page
+ * cross-check — NOT the fallback composition. Null when no AV key is set.
+ */
+export function buildSecondaryProvider(): QuoteProvider | null {
+  const key = process.env.ALPHAVANTAGE_API_KEY;
+  return key ? createAlphaVantageProvider(key) : null;
+}
+
 /** Cache TTL in seconds from CACHE_TTL_SECONDS (default 60). Shared so the scan
  *  API and the detail route honor the same operator-configured value. */
 export function cacheTtlSeconds(): number {

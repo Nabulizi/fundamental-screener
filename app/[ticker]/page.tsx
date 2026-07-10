@@ -1,6 +1,9 @@
 import Link from 'next/link';
-import { buildProvider, buildValuationProvider, cacheTtlSeconds } from '@/lib/buildProvider';
+import { buildProvider, buildValuationProvider, buildSecondaryProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
+import { getCached, setCached } from '@/lib/cache';
+import { buildCrossCheck } from '@/lib/crossCheck';
+import type { QuoteProvider } from '@/lib/provider';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, SCORING_VERSION, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import { buildDataProvenance } from '@/lib/provenance';
@@ -23,6 +26,17 @@ async function loadValuation(ticker: string, provider: ValuationProvider, ttlSec
   const profile = await provider.fetchValuationProfile(ticker);
   setCachedValuation(ticker, profile, ttlSeconds);
   return profile;
+}
+
+// Independent AV fetch for the cross-check, cached under a prefixed key so it
+// never collides with the primary (also-ScanRow) cache entry.
+async function loadSecondary(ticker: string, provider: QuoteProvider, ttlSeconds: number) {
+  const key = `av:${ticker}`;
+  const cached = getCached(key);
+  if (cached) return cached;
+  const row = await provider.fetchCompany(ticker);
+  setCached(key, row, ttlSeconds);
+  return row;
 }
 
 // SERVER-ONLY: builds the provider from env keys, same path as /api/scan.
@@ -49,15 +63,15 @@ export default async function TickerPage({ params }: { params: { ticker: string 
 
   const ttl = cacheTtlSeconds();
   const valuationProvider = buildValuationProvider();
+  const secondaryProvider = buildSecondaryProvider();
 
-  // Scorecard row (required) + valuation history (optional) in parallel.
-  // allSettled so a failing/absent valuation fetch can NEVER take down the page:
-  // the panel falls back to today's TTM-only behavior. scan.ts already swallows
-  // per-ticker provider errors; this also catches cache/circuit-breaker throws
-  // (the app has no error boundary).
-  const [scanSettled, valSettled] = await Promise.allSettled([
+  // Scorecard row (required) + valuation history + independent AV cross-check,
+  // all in parallel. allSettled so a failing/absent optional fetch can NEVER take
+  // down the page.
+  const [scanSettled, valSettled, secSettled] = await Promise.allSettled([
     scanTickers([symbol], provider, { ttlSeconds: ttl }),
     valuationProvider ? loadValuation(symbol, valuationProvider, ttl) : Promise.resolve(null),
+    secondaryProvider ? loadSecondary(symbol, secondaryProvider, ttl) : Promise.resolve(null),
   ]);
 
   if (scanSettled.status === 'rejected') {
@@ -70,6 +84,8 @@ export default async function TickerPage({ params }: { params: { ticker: string 
     return <Shell><p className="message">Couldn&rsquo;t load {symbol}{err ? ` — ${err.message}` : '.'}</p></Shell>;
   }
   const profile = valSettled.status === 'fulfilled' ? valSettled.value : null;
+  const secondaryRow = secSettled.status === 'fulfilled' ? secSettled.value : null;
+  const crossCheck = buildCrossCheck({ primary: row, secondary: secondaryRow, hasSecondaryProvider: secondaryProvider != null });
   const drivers = profile ? computeDrivers(profile) : null;
   const showDrivers = drivers != null && [
     drivers.revenueCagr, drivers.operatingMargin, drivers.fcfMargin,
@@ -163,6 +179,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
           isFinancial,
           insufficientData: hasInsufficientData(row),
         })}
+        crossCheck={crossCheck}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>

@@ -982,6 +982,11 @@ tr.row-weak:hover { background: var(--panel-2); }
 .ds-grid dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .ds-grid dd { margin: 0.15rem 0 0; font-size: 0.9rem; }
 .ds .hint { margin-top: 0.6rem; }
+.ds-xcheck { margin-top: 0.75rem; }
+.ds-xcheck dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ds-xcheck dd { margin: 0.2rem 0 0; }
+.ds-xcheck-list { list-style: none; margin: 0.2rem 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1.5rem; font-size: 0.88rem; }
+.ds-xcheck-label { color: var(--muted); }
 .src-av { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.25rem; cursor: help; }
 
 .peers { margin-top: 2rem; }
