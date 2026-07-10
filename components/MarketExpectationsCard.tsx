@@ -1,5 +1,7 @@
 import { formatPercent, formatReturn } from '@/lib/format';
 import type { MarketExpectations } from '@/lib/marketExpectations';
+import Explain from '@/components/Explain';
+import { impliedGrowthGloss } from '@/lib/explain/glosses';
 
 // Neutral "what must be true?" card. No buy/sell, no target, no over/undervalued,
 // no red/green. Deterministic display of the model built in lib/marketExpectations.
@@ -39,6 +41,7 @@ export default function MarketExpectationsCard({ model }: { model: MarketExpecta
           growth ranges {bandText}
           {model.bandOutOfRange && ' (an endpoint is beyond the solvable range)'}.
         </span>
+        <Explain gloss={impliedGrowthGloss(model.impliedPct, model.delivered.revenueGrowthTTM)} />
       </div>
 
       <div className="mx-delivered">

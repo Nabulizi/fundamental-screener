@@ -5,6 +5,8 @@ import {
   type ScenarioLabel,
 } from '@/lib/dcf';
 import { formatCurrency, formatMarketCap } from '@/lib/format';
+import Explain from '@/components/Explain';
+import { scenarioGloss } from '@/lib/explain/glosses';
 
 interface Props {
   /** The selected FCF base (raw currency units), guaranteed positive by ValuationPanel. */
@@ -65,6 +67,7 @@ export default function ScenarioPanel({
         (Bear), near (Base), or above (Bull) what today&rsquo;s price implies. Base is initialized at the
         market-implied growth; all editable. Not a fair value, target, or recommendation — informational only.
       </p>
+      <Explain gloss={scenarioGloss()} />
 
       {anchor.pct != null && (
         <p className="scenario-note">
