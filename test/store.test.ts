@@ -4,7 +4,7 @@ import type { Store, SnapshotRecord } from '@/lib/store';
 import type { ScanRow } from '@/lib/types';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
 
 function row(over: Partial<ScanRow> = {}): ScanRow {
   return {
@@ -19,8 +19,12 @@ const snap = (over: Partial<SnapshotRecord> = {}): SnapshotRecord => ({
   row: row(), retrievedAt: '2026-06-01T00:00:00Z', ...over,
 });
 
-let store: Store; let dbPath: string;
-afterEach(() => { store?.close(); for (const s of ['', '-wal', '-shm']) { try { rmSync(dbPath + s); } catch { /* ignore */ } } });
+let store: Store; let dbPath: string; let tmpDir: string;
+afterEach(() => {
+  store?.close();
+  for (const s of ['', '-wal', '-shm']) { try { rmSync(dbPath + s); } catch { /* ignore */ } }
+  if (tmpDir) { try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ } tmpDir = ''; }
+});
 
 describe('sqlite store', () => {
   it('putSnapshot is idempotent per (ticker, day); getSnapshots windows and orders newest-first', async () => {
@@ -45,5 +49,35 @@ describe('sqlite store', () => {
     expect(s.row.marketCap).toBe(3e12);
     expect(s.row.fcfYieldPercent).toBe(6);
     expect(s.tier).toBe('moderate');
+  });
+
+  it('creates the parent directory on a fresh path (regression: gitignored data/)', async () => {
+    tmpDir = join(tmpdir(), `screener-fresh-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    dbPath = join(tmpDir, 'nested', 'data', 'screener.db'); // parent dirs do NOT exist yet
+    store = createSqliteStore(dbPath);                       // must mkdir, not throw
+    await store.putSnapshot(snap());
+    expect(await store.getSnapshots('AAPL', 3650)).toHaveLength(1);
+  });
+
+  it('imports the JSONL backup idempotently, skipping corrupt lines', async () => {
+    tmpDir = join(tmpdir(), `screener-jsonl-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpDir, { recursive: true });
+    const jsonl = join(tmpDir, 'snapshots.jsonl');
+    dbPath = join(tmpDir, 'screener.db');
+    writeFileSync(jsonl, [
+      JSON.stringify({ date: '2026-06-01', ticker: 'AAPL', scoringVersion: 4, retrievedAt: 'x', row: row(), score: { tier: 'strong', strength: 14, risk: 2 } }),
+      '{ not valid json',                                    // corrupt → skipped
+      JSON.stringify({ date: '2026-06-02', ticker: 'MSFT', scoringVersion: 4, retrievedAt: 'x', row: row({ ticker: 'MSFT' }), score: { tier: 'moderate', strength: 9, risk: 3 } }),
+      '',                                                    // blank → skipped
+    ].join('\n'), 'utf8');
+
+    store = createSqliteStore(dbPath, jsonl);
+    expect(await store.getSnapshots('AAPL', 3650)).toHaveLength(1);
+    expect((await store.getSnapshots('MSFT', 3650))[0].strength).toBe(9);
+    store.close();
+
+    // Reopen the same DB + JSONL: the meta flag makes re-import a no-op (no dupes).
+    store = createSqliteStore(dbPath, jsonl);
+    expect(await store.getSnapshots('AAPL', 3650)).toHaveLength(1);
   });
 });

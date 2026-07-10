@@ -1,3 +1,4 @@
+import 'server-only'; // native module + fs + Node APIs — fail loudly if bundled for the client
 import type { ScanRow } from '../types';
 import type { SignalTier } from '../scoring';
 import { createSqliteStore } from './sqlite';
