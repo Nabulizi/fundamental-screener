@@ -41,7 +41,7 @@ export default function MarketExpectationsCard({ model }: { model: MarketExpecta
           growth ranges {bandText}
           {model.bandOutOfRange && ' (an endpoint is beyond the solvable range)'}.
         </span>
-        <Explain gloss={impliedGrowthGloss(model.impliedPct, model.delivered.revenueGrowthTTM)} />
+        <Explain gloss={impliedGrowthGloss(model.impliedPct, model.impliedOutOfRange, model.delivered.revenueGrowthTTM)} />
       </div>
 
       <div className="mx-delivered">

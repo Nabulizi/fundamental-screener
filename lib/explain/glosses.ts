@@ -14,6 +14,7 @@ export interface Gloss {
 
 export function impliedGrowthGloss(
   impliedPct: number | null,
+  impliedOutOfRange: boolean,
   deliveredRevGrowthPct: number | null,
 ): Gloss {
   const define =
@@ -23,7 +24,12 @@ export function impliedGrowthGloss(
 
   let read: string | null = null;
   if (impliedPct != null) {
-    read = `The price implies roughly ${impliedPct.toFixed(1)}%/yr.`;
+    // Match the panel's clamped display (">100%" / "<-50%") so the explanation
+    // never disagrees with the number shown directly above it.
+    const valuePhrase = impliedOutOfRange
+      ? `${impliedPct > 0 ? 'more than' : 'less than'} ${impliedPct.toFixed(0)}%/yr`
+      : `roughly ${impliedPct.toFixed(1)}%/yr`;
+    read = `The price implies ${valuePhrase}.`;
     if (deliveredRevGrowthPct != null) {
       read +=
         ` Recent revenue grew about ${deliveredRevGrowthPct.toFixed(1)}%/yr — the further implied growth` +
@@ -62,8 +68,9 @@ export function tierGloss(tier: SignalTier, strength: number, risk: number): Glo
     define:
       'Strength (0–21) adds up the positive fundamental signals; Risk (0–20) adds up the ' +
       "warning signals. They're separate on purpose — a company can be both strong and risky. The " +
-      'tier (Strong / Moderate / Weak) just summarizes the Strength score; it is a neutral label, ' +
-      'not a rating and not a recommendation.',
+      'tier (Strong / Moderate / Weak) starts from the Strength score, then risk, data-quality, and ' +
+      'overlay rules (disqualifiers, insufficient data, crowding, value-trap, peak-cycle, soft ' +
+      'earnings quality) can floor or cap it. It is a neutral label, not a rating and not a recommendation.',
     read: `Here: Strength ${strength}, Risk ${risk} → ${tier}. A high Strength narrows what to research next; it isn't a conclusion on its own.`,
   };
 }
