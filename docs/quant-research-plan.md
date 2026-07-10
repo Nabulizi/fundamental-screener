@@ -23,6 +23,36 @@ edge test:
   equal-weight eligible-universe null control.
 - `python3 pit_backtest.py --selftest` is the offline runnable check.
 
+## EDGAR feasibility spike result
+
+Ran `should-i-trade/edgar_pit_spike.py` (throwaway diagnostic) to test whether
+SEC EDGAR can supply restatement-safe, as-first-reported annual fundamentals —
+the thing Finnhub cannot. Method deliberately avoids the `/api/xbrl/frames` API
+(it picks one last-filed fact per period = the restatement leak); uses
+`submissions` + `companyfacts` filtered **by original 10-K accession**.
+
+- **Q1/Q2 PASSED** — the original 10-K accession + filed date is identifiable
+  per fiscal year, and filtering facts by that accession returns as-first-reported
+  values while **excluding later comparative/restated re-reports** of the same
+  period. Verified: AAPL `0000320193-20-000096` (filed 2020-10-30), Exxon
+  `0000034088-23-000020` (filed 2023-02-22).
+- **Q4 PASSED** — a delisted filer still resolves by CIK: Twitter
+  `0001418091` returns submissions + companyfacts years after its 2022 delisting.
+- **Q3 not observed, not failed** — no 10-K/A amendment fell in the sampled
+  fiscal years; the `amendments()` path exists to catch them.
+- **Known friction (Q5):** ticker→CIK mapping is noisy (XOM resolved to a
+  holding entity with no recent 10-K — a real loader must key off **CIK**, not
+  ticker); non-calendar fiscal years (AAPL = Sept) mean keying off actual
+  `reportDate`, never assuming Dec-31; `submissions.recent` caps at ~1000 filings
+  (older ones paginate under `filings.files[]`).
+- **What EDGAR does NOT solve:** it has **no prices and no tradable-universe
+  membership.** Restatement-safe fundamentals joined to survivorship-biased or
+  missing delisted prices is still a biased backtest.
+
+**Gate before building an EDGAR loader:** prove **delisted price/return data**
+first (next spike). Fundamentals without matching delisted prices cannot produce
+an honest return series, so the loader is premature until prices are sourced.
+
 ## The original gate
 
 - **>1 `filedDate` for a fiscal year** → real point-in-time is available. Build
