@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ScanRow } from './types';
 import { scoreRow, SCORING_VERSION, type ScoredRow } from './scoring';
+import type { Store } from './store';
 
 // Append-only JSONL scan history. One line per ticker per local calendar day
 // (first fresh result wins). See docs/specs/2026-07-03-scan-snapshots-design.md.
@@ -27,6 +28,9 @@ export interface SnapshotOptions {
   appendFileImpl?: typeof appendFile;
   readFileImpl?: typeof readFile;
   mkdirImpl?: typeof mkdir;
+  /** Durable store to ALSO write to (callers pass getStore()). The JSONL file
+   *  stays as the backup; omitting this (e.g. in tests) writes JSONL only. */
+  store?: Store | null;
 }
 
 const DEFAULT_FILE = path.join(process.cwd(), 'data', 'snapshots.jsonl');
@@ -108,6 +112,20 @@ async function doRecord(rows: ScanRow[], opts: SnapshotOptions, filePath: string
 
     await (opts.mkdirImpl ?? mkdir)(path.dirname(filePath), { recursive: true });
     await (opts.appendFileImpl ?? appendFile)(filePath, payload, 'utf8');
+
+    // Durable store (SQLite) in addition to the JSONL backup. Never lets a store
+    // failure break the snapshot — the outer try/catch also guards it.
+    if (opts.store) {
+      for (const row of fresh) {
+        const s = scoreRow(row);
+        await opts.store.putSnapshot({
+          ticker: row.ticker, day: date, scoringVersion: SCORING_VERSION,
+          tier: s.tier, strength: s.strengthScore, risk: s.riskScore,
+          row, retrievedAt: row.retrievedAt,
+        });
+      }
+    }
+
     for (const r of fresh) seen.add(r.ticker);
     return fresh.length;
   } catch (err) {
