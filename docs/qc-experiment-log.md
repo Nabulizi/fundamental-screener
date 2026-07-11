@@ -24,7 +24,33 @@ Code: `should-i-trade/quantconnect_v0_fcf_strategy.py` (Test 001) and
 
 ---
 
-## Test 002 -- value + quality  [PREREGISTERED, not yet run]
+## Test 002 -- value + quality  [RUN: FAIL (per preregistered criteria)]
+
+Result (2010-2022, same universe/costs, 3 arms from one file):
+
+| Arm | CAGR | Sharpe | MaxDD | IS Sharpe | OOS Sharpe |
+|---|---|---|---|---|---|
+| quality_value | 16.83% | 0.86 | -29.74% | 1.01 | 0.77 |
+| value (naive)  | 13.04% | 0.65 | -41.93% | 0.58 | 0.71 |
+| all (null)     | 12.78% | 0.91 | -22.54% | 1.06 | 0.78 |
+
+Verdict: FAIL on the primary criterion (quality_value Sharpe 0.86 <= all 0.91),
+and it does not beat `all` in IS or OOS either. What DID hold: the quality gate is
+a large improvement over naive value (Sharpe 0.65->0.86, MaxDD -42%->-30%, CAGR
+13%->16.8%) -- quality fixes value traps as hypothesized. What did NOT hold: it
+still fails to beat simply owning the equal-weight universe on a risk-adjusted
+basis. It earns +4% CAGR over the null but at enough added risk that Sharpe falls
+below it; Sharpe was preregistered as primary specifically to block the
+"but higher return" rescue. Cross-test lesson (Tests 001+002): a 20-name
+concentrated portfolio keeps losing on Sharpe to the 500-name equal-weight null --
+diversification is beating stock-selection here, a CONFOUND (concentration) that
+any fair signal test must control for. Next test, if any, is a NEW preregistered
+hypothesis -- e.g. hold a full quintile (~100 names) so diversification is
+comparable and the signal is isolated. Not a re-tune of Test 002.
+
+---
+
+## Test 002 -- value + quality  [original preregistration, kept for the record]
 
 - Hypothesis: the Test 001 failure mode is value traps (cheap FCF = distressed /
   cyclical / melting). Gating on QUALITY before ranking on value should cut the
