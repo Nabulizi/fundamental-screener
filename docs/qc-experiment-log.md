@@ -84,6 +84,28 @@ new preregistered test. Do NOT move to paper/live on one clean backtest.
 
 ---
 
+## Test 005 -- frozen forward-period extension  [PREREGISTERED, not yet run]
+
+- Motivation: Test 004 OOS (2016-2022) is still in-period. The decisive check is
+  genuinely FORWARD data the signal never touched. Catches stale-period artifacts.
+  Prove it is not a period accident before any strategy report.
+- FROZEN: EXACT qv50/qv100 rules, universe, gate, seeds, cost model from Test 004.
+  The ONLY change is extending set_end_date to 2026-07-01. No factor or parameter
+  changes whatsoever. This is a freshness/OOS extension, not tuning.
+- Report: metrics on the FORWARD slice 2023-01-01 .. 2026-07 specifically (qv vs
+  hold-random median/p90, vs EW-500), per breadth, net@10bps; plus per-year.
+- PASS: qv Sharpe on the 2023-2026 forward slice > hold-random MEDIAN (both
+  breadths), net@10bps.
+- STRONG: qv > hold-random p90 on the forward slice.
+- FAIL: qv <= hold-random median on the forward slice -> the edge was a
+  stale-period artifact; do not proceed to a strategy report.
+- Frozen: breadths {50,100}, K=100, same seeds, ROE>=median gate, top-500, monthly.
+- If PASS: next is a frozen strategy audit report (exact rules, sector exposures,
+  top holdings by year, drawdowns, monthly/annual returns) then paper/shadow design.
+  Still NOT live.
+
+---
+
 ## Test 004 -- cost + robustness of quality_value  [RUN: STRONG PASS]
 
 Turnover (OOS, 1-way/mo): qv ~18-21%, hold-random 0.4%, redraw-random 80-90%. So
