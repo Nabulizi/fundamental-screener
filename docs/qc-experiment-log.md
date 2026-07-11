@@ -84,7 +84,37 @@ new preregistered test. Do NOT move to paper/live on one clean backtest.
 
 ---
 
-## Test 004 -- cost + robustness of quality_value  [PREREGISTERED, not yet run]
+## Test 004 -- cost + robustness of quality_value  [RUN: STRONG PASS]
+
+Turnover (OOS, 1-way/mo): qv ~18-21%, hold-random 0.4%, redraw-random 80-90%. So
+qv pays MORE cost than the hold-random null it beats -- conservative comparison.
+
+| Breadth | net@10bps Sharpe | hd median | hd p90 | @50bps | verdict |
+|---|---|---|---|---|---|
+| 50  | 1.03 | 0.82 | 0.91 | 0.93 | STRONG at every cost 0-50bps |
+| 100 | 0.98 | 0.84 | 0.90 | 0.89 | STRONG to 25bps, PASS at 50bps |
+
+- PRIMARY PASS: qv net@10bps > hd median at both breadths (1.03>0.82, 0.98>0.84).
+- STRONG PASS: qv > hd p90 @10bps and > hd median at 25 and 50bps, both breadths.
+- ROBUSTNESS PASS: qv100 yearly OOS net@10bps positive EVERY year 2016-2022
+  (+12.9/+25.5/+5.9/+17.8/+14.6/+28.4/+8.2%), worst +5.9%. Not one-period.
+- Also beats `all` EW-500 (1.03/0.98 vs 0.86). At breadth 50/100 qv beats both nulls.
+
+Verdict: the selection edge survives realistic costs (large-cap ~2-5bps; holds to
+50bps), pays more turnover than its null and still wins, and is spread across all
+7 OOS years. First credible, robust, preregistered positive result.
+
+REMAINING CAVEATS (do NOT skip to live):
+- One universe (US top-500), one period (OOS ~2016-2022). No cross-regime / other
+  market / pre-2010 / post-2022 validation.
+- SECTOR-NEUTRALITY UNTESTED -- the biggest open confound. The edge could be a
+  sector bet (the +25%/+28% years may be sector tilts). Test 005 must check this.
+- Shadow model: idealized monthly-close fills, costs via a bps proxy only (no
+  slippage/impact/liquidity). Real execution differs.
+- Researcher DOF across Tests 1-4 (each preregistered, which limits it).
+
+Next gate = Test 005: sector-neutral random null / sector-exposure report. Only
+after that, a clean QC strategy report and a true out-of-period test. NOT live.
 
 - Motivation: Test 003 showed gross selection skill. Before treating quality_value
   as a candidate strategy it must survive realistic COSTS and not be a one-period
