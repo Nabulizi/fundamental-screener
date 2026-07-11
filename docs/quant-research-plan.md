@@ -103,6 +103,31 @@ Next real step = the QC v0 monthly FCF-yield rank/rebalance backtest
 (`should-i-trade/quantconnect_v0_fcf_strategy.py`) with null control, SPY
 benchmark, costs, IS/OOS split — the first backtest that isn't plumbing.
 
+## QC v0 result (2026-07): naive FCF-yield rank is NOT an edge
+
+First HONEST backtest (survivorship-free universe, engine-level PIT, delisted
+names included, costs, null control, IS/OOS), 2010-2022:
+
+| | CAGR | Sharpe | MaxDD |
+|---|---|---|---|
+| RANK (top-20 FCF yield, EW, monthly) | 13.04% | 0.65 | -41.93% |
+| ALL (null control, ~500 EW) | 12.78% | 0.91 | -22.54% |
+
+The ranking added no return (13.04% vs 12.78%) while nearly doubling drawdown
+(-42% vs -23%) and lowering Sharpe (0.65 vs 0.91) — worse risk-adjusted than the
+equal-weight-universe null control. Concentrating into the cheapest-by-FCF names
+loaded value-trap/cyclical risk without compensating return. Mediocre in both
+IS (0.58) and OOS (0.71), so not a one-period fluke. **Naive single-factor
+FCF-yield rank is falsified as an edge on trustworthy data.**
+
+Caveats: this falsifies the CRUDE single factor, not the full 12-criterion
+scorecard (quality gates, FCF sanitization, sector logic); turnover unlogged (rank
+turns over more, only widening the gap). Outcome as predicted several steps back:
+**trustworthy disappointment + a reusable free survivorship-free research engine.**
+To test any next signal, swap the ranking function in `_select` — the honest
+plumbing is done. Discipline: test few, principled hypotheses; respect OOS; do not
+parameter-chase on 2010-2022 US large caps.
+
 ## The original gate
 
 - **>1 `filedDate` for a fiscal year** → real point-in-time is available. Build
