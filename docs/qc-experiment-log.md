@@ -50,6 +50,34 @@ comparable and the signal is isolated. Not a re-tune of Test 002.
 
 ---
 
+## Test 003 -- breadth-matched selection test  [PREREGISTERED, not yet run]
+
+- Motivation: Tests 001-002 compared a 20-name portfolio to the 500-name null, so
+  concentration (a confound) may have swamped the signal. Correct question: does
+  quality_value pick BETTER stocks than a RANDOM portfolio of the SAME size?
+- Design: for breadths N in {20, 50, 100}, compare quality_value top-N against
+  N_RANDOM=100 random N-name portfolios drawn (fixed seeds) from the SAME eligible
+  universe each month. Same universe (top-500 by mktcap, price>5, fcf_yield+ROE),
+  same monthly rebalance dates, same IS/OOS split, same period (2010-2022).
+- Returns: gross equal-weight monthly (no costs -- pure selection test; turnover is
+  matched at equal breadth so costs roughly cancel). No actual trading; shadow
+  return series computed from month-over-month prices of held names.
+- Report, per breadth: quality_value CAGR/Sharpe/MaxDD vs the random distribution
+  (median, 10th, 90th percentile) for the same metrics, full + IS + OOS.
+- PASS criteria, fixed in advance:
+  1. PRIMARY: quality_value OOS Sharpe > random-null MEDIAN OOS Sharpe (at a given
+     breadth) -- evidence of selection skill above chance.
+  2. STRONG: quality_value OOS Sharpe > random-null 90th-percentile OOS Sharpe.
+  3. FAIL: quality_value OOS Sharpe <= random median -> results are within the
+     range of random same-breadth portfolios = no demonstrated selection skill.
+- Frozen (not to change after results): breadths {20,50,100}, N_RANDOM=100, fixed
+  seeds, ROE>=median gate, top-500 universe, monthly, 2010-2022, gross returns.
+- Note: this is an experimental-design correction (isolate signal from
+  concentration), NOT optimization. If quality_value fails to beat the random
+  median at every breadth, the signal has no demonstrated stock-selection skill.
+
+---
+
 ## Test 002 -- value + quality  [original preregistration, kept for the record]
 
 - Hypothesis: the Test 001 failure mode is value traps (cheap FCF = distressed /
