@@ -80,8 +80,19 @@ joined to missing delisted prices is still a biased backtest.
 
 Vendor comparison + a one-month validation protocol (acceptance test = terminal
 returns on TWTR/CELG/ATVI/XLNX/LEH, not "has delisted tickers") live in
-`price-vendor-recon.md`. Evaluation order: CRSP/WRDS if you have access →
-Sharadar → Polygon spike → Norgate (Windows friction).
+`price-vendor-recon.md`.
+
+**UPDATE (2026-07): QuantConnect passed the terminal-return acceptance test on the
+free tier** — all five terminal events captured correctly (LEH→$0.14 wipeout,
+TWTR/ATVI cash, XLNX stock-merger value, CELG cash+stock), plus corporate actions,
+ticker-identity map files, and survivorship-free fundamentals for a delisted name
+(XLNX) with `file_date`. So the price/return blocker is resolved **for free**,
+subject to LEAN lock-in (strategy lives in QC, raw data can't be exported). Paid
+data (Sharadar/Norgate) is now only needed if exportable, self-owned data matters.
+Open item: as-first-reported fundamental period↔file_date alignment needs a cleaner
+probe. Next real step = port the FCF-yield rank/rebalance strategy into a LEAN
+algorithm using QC's survivorship-free universe + fundamentals (the first backtest
+that isn't plumbing).
 
 ## The original gate
 

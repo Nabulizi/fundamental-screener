@@ -111,6 +111,31 @@ dates. It could dissolve the "buy data to get honest prices" problem entirely.
   Cloud algorithm, run, read the DELISTING/FILL logs against the terminal-return
   ground truth. Same pass/fail gate as the Sharadar protocol, but free.
 
+### Spike result (2026-07): PASS — free tier, ran in ~23s
+
+Terminal returns captured correctly on all five, including the cases free data
+cannot do:
+
+| Ticker | Event | Ground truth | QC liquidation | Verdict |
+|---|---|---|---|---|
+| LEH | bankruptcy | ~$0 (−100%) | $62.47 → **$0.14** | PASS (wipeout real, not a stopped series) |
+| TWTR | cash merger | $54.20 | $53.78 | PASS (~0.8% pre-close discount) |
+| ATVI | cash merger | $95.00 | $94.42 | PASS |
+| XLNX | stock merger 1.7234×AMD | ~$194.7 | $194.87 | PASS (deal value via last price) |
+| CELG | cash+stock+CVR | last ~$108 | $108.24 | PASS (CVR not modeled; expired worthless) |
+
+Also working: splits, dividends, `SymbolChangedEvent` (ATVI→ATVID→ATVI),
+map-file identity, and **fundamentals for a delisted name** (XLNX: 330 snapshots)
+with `file_date` exposed. Open item: as-first-reported period↔file_date alignment
+needs a cleaner probe (the spike's crude logging misaligned the multi-period blob).
+
+**Implication:** QuantConnect resolves the delisted-price/terminal-return blocker
+**for free** — the thing we were about to buy Sharadar for. The price/return leg is
+a decisive pass; the fundamentals leg is a strong pass pending the alignment check.
+The remaining cost is **not dollars but lock-in**: the strategy must live in LEAN
+and QC's raw data can't be exported. Buying a vendor (Sharadar/Norgate) is now only
+needed if you require exportable, self-owned data.
+
 ## Recommended evaluation order
 
 1. **Check CRSP/WRDS access first.** Any current/alumni university or library
