@@ -50,7 +50,76 @@ comparable and the signal is isolated. Not a re-tune of Test 002.
 
 ---
 
-## Test 003 -- breadth-matched selection test  [PREREGISTERED, not yet run]
+## Test 003 -- breadth-matched selection test  [RUN: PASS]
+
+Result (gross, OOS Sharpe vs 100 random same-breadth portfolios):
+
+| Breadth | qv OOS Sharpe | random median | random p90 | verdict |
+|---|---|---|---|---|
+| 20  | 0.97 | 0.83 | 1.00 | PASS (> median) |
+| 50  | 1.05 | 0.84 | 0.93 | STRONG-PASS (> p90) |
+| 100 | 1.01 | 0.85 | 0.90 | STRONG-PASS (> p90) |
+
+Full-period qv Sharpe: 1.02 / 1.10 / 1.11. quality_value beats the random
+same-size median at every breadth and clears p90 at 50 and 100 -- OOS evidence of
+selection skill above chance. Reconciles Tests 001-002: their FAIL vs the 500-name
+null was a CONCENTRATION confound (20 names = higher variance), not a dead signal.
+Design correction was decisive.
+
+CAVEATS (a positive result is where over-claiming is most dangerous):
+- GROSS of costs. Monthly rebalance turnover is real; costs lower absolute Sharpe.
+  The RELATIVE result (vs random) is robust to costs (matched turnover at equal
+  breadth), but a tradeable NET edge is not yet established.
+- One universe (US top-500), one period (2010-2022), one signal construction. Not
+  yet shown across regimes/markets.
+- Beating p90 = better than 90% of random portfolios (~p<0.10 per breadth);
+  consistent across breadths strengthens it, but this is evidence, not proof.
+- Test 003 tested quality_value (gated), not naive value -- cannot yet attribute
+  the skill to the quality gate vs the value rank separately.
+
+Next disciplined steps (NOT execution): (1) re-run with realistic costs to see if
+the edge survives net; (2) attribute -- does naive value ALSO beat random, or is
+the quality gate doing the work; (3) robustness across a different period. Each a
+new preregistered test. Do NOT move to paper/live on one clean backtest.
+
+---
+
+## Test 004 -- cost + robustness of quality_value  [PREREGISTERED, not yet run]
+
+- Motivation: Test 003 showed gross selection skill. Before treating quality_value
+  as a candidate strategy it must survive realistic COSTS and not be a one-period
+  artifact. Robustness, NOT optimization -- no factor changes.
+- Breadths: 50 and 100 only (the STRONG-PASS breadths).
+- Portfolios (same universe/period/dates/seeds as Test 003):
+  * qv = quality_value top-N.
+  * hold-random (K=100): random N-name portfolio that HOLDS, replacing only names
+    that leave the universe -> low turnover, TURNOVER-MATCHED to qv. This is the
+    fair null for a cost comparison (Test 003 redraw-random churns ~100%/mo and
+    would be unfairly cost-penalized).
+  * redraw-random (K=100): kept from Test 003 for continuity.
+  * all = equal-weight ~500.
+- Costs: per-side bps grid {0, 5, 10, 25, 50}; monthly cost = 2 * one_way_turnover
+  * bps/1e4 (round trip). One-way turnover = names_changed / breadth.
+- Report (OOS): CAGR, Sharpe, MaxDD, avg one-way turnover per portfolio at each
+  cost level; plus rolling per-year qv returns (is the edge one-period?).
+- PASS criteria, fixed in advance:
+  1. PRIMARY: qv (both 50 and 100) OOS Sharpe NET at 10 bps > hold-random MEDIAN
+     OOS Sharpe net at 10 bps.
+  2. STRONG: qv > hold-random p90 at 10 bps AND qv > hold-random median at 25 AND
+     50 bps.
+  3. Robustness: the OOS edge is not concentrated in a single year (no one year
+     carrying the whole result).
+- FAIL: qv OOS Sharpe net at 10 bps <= hold-random median -> no net selection edge.
+- Frozen: breadths {50,100}, K=100, fixed seeds, ROE>=median gate, top-500,
+  monthly, 2010-2022.
+- DEFERRED to a future preregistered test (Test 005 candidate): sector-exposure
+  reporting and a SECTOR-NEUTRAL random null (Codex 3c) -- omitted here to bound
+  complexity; if qv survives costs, sector-neutrality is the next confound to rule
+  out (is the edge just a sector bet?).
+
+---
+
+## Test 003 -- breadth-matched selection test  [original preregistration, kept for the record]
 
 - Motivation: Tests 001-002 compared a 20-name portfolio to the 500-name null, so
   concentration (a confound) may have swamped the signal. Correct question: does
