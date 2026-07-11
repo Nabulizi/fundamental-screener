@@ -68,6 +68,29 @@ trial — not clearly documented) · **Partial**. Pricing is approximate (≈202
   Norgate Data Updater desktop app running). On macOS that's a Windows VM just to
   evaluate. Minimal fundamentals.
 
+## Live check — Sharadar SEP page (2026-07)
+
+Pulled from `data.nasdaq.com/databases/SEP` directly. Documented facts that
+update the matrix:
+
+- **Delisted coverage confirmed:** "21,000 active and delisted tickers, history
+  to 1998" — survivorship-inclusive is documented, not MV.
+- **Corporate actions tracked:** splits, dividends, spinoffs, **acquisitions,
+  delist reasons**, ticker changes, via a dedicated `SHARADAR/ACTIONS` table.
+- **Terminal return stays MV — and here's why precisely:** the documented price
+  adjustment covers dividends / splits / spinoffs **only, not merger cash
+  consideration.** So a cash-acquisition payout is *not* auto-encoded in the
+  adjusted close; you reconstruct it from the ACTIONS acquisition row. The data
+  to do so is documented to exist — but that the reconstruction yields the right
+  terminal return must be proven in trial (TWTR/ATVI cash, XLNX stock, LEH →0).
+- **Free sample cannot test this:** the free SEP sample is fixed tickers, window
+  **2018-09-01 → 2018-12-31 only.** All five acceptance-test tickers delist
+  outside that window, so the $0 path can't validate terminal returns — a
+  one-month personal subscription is the minimum to run the protocol.
+- **Pricing is gated behind a (free) Nasdaq Data Link account** ("Log in to view
+  pricing information"). Remembered ballpark ≈ $25–50/mo personal for SEP —
+  confirm after sign-in. SF1 (fundamentals) is a separate table/price.
+
 ## Recommended evaluation order
 
 1. **Check CRSP/WRDS access first.** Any current/alumni university or library
