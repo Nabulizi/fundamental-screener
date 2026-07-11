@@ -89,10 +89,19 @@ ticker-identity map files, and survivorship-free fundamentals for a delisted nam
 (XLNX) with `file_date`. So the price/return blocker is resolved **for free**,
 subject to LEAN lock-in (strategy lives in QC, raw data can't be exported). Paid
 data (Sharadar/Norgate) is now only needed if exportable, self-owned data matters.
-Open item: as-first-reported fundamental period↔file_date alignment needs a cleaner
-probe. Next real step = port the FCF-yield rank/rebalance strategy into a LEAN
-algorithm using QC's survivorship-free universe + fundamentals (the first backtest
-that isn't plumbing).
+**Fundamental PIT probe PASSED (2026-07):** a universe-based probe tracked 60
+quarterly filing rolls for AAPL/MSFT/XLNX (delisted) over 2018-2023 with **0
+lookahead violations** — every filing became visible ~24-46 days after period-end
+(at the real filing), never at period-end or before. XLNX behaved identically to
+live names up to its 2022 delisting. Key finding: **QC enforces point-in-time at
+the engine level** (the universe only delivers data as-of the current date), so the
+strategy consumes universe fundamentals directly with no manual filedDate gating
+(unlike the Finnhub/EDGAR path). Caveat: the raw `file_date` MultiPeriodField slot
+is unreliable for display, but the roll-timing is independent proof.
+
+Next real step = the QC v0 monthly FCF-yield rank/rebalance backtest
+(`should-i-trade/quantconnect_v0_fcf_strategy.py`) with null control, SPY
+benchmark, costs, IS/OOS split — the first backtest that isn't plumbing.
 
 ## The original gate
 
