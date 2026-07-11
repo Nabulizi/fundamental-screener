@@ -91,17 +91,42 @@ update the matrix:
   pricing information"). Remembered ballpark ≈ $25–50/mo personal for SEP —
   confirm after sign-in. SF1 (fundamentals) is a separate table/price.
 
+## QuantConnect (LEAN Cloud) — evaluate FIRST if no CRSP (free)
+
+A different shape of option: not a data feed you buy, but a **free cloud
+backtester with survivorship-free US data bundled in** — delisting events,
+corporate actions, ticker map-files, and Morningstar fundamentals with file
+dates. It could dissolve the "buy data to get honest prices" problem entirely.
+
+- **Pros:** free tier runs real backtests on survivorship-free data; delistings,
+  splits, dividends, `SymbolChangedEvent` are first-class; fundamentals include
+  file/period dates. Attacks all four blockers at $0.
+- **Cons / must-verify:** (1) **data lock-in** — you can't export QC's raw
+  prices/fundamentals, only backtest *results*, so the strategy lives in LEAN and
+  the local harness becomes a reference tool; (2) **terminal-return fidelity is
+  still the acceptance test** — QC liquidates at delisting, but stock mergers
+  (XLNX→AMD) likely cash out at last price rather than delivering acquirer shares
+  — MV; (3) free-tier compute/length limits — MV.
+- **Spike:** `should-i-trade/quantconnect_terminal_spike.py` — paste into a QC
+  Cloud algorithm, run, read the DELISTING/FILL logs against the terminal-return
+  ground truth. Same pass/fail gate as the Sharadar protocol, but free.
+
 ## Recommended evaluation order
 
 1. **Check CRSP/WRDS access first.** Any current/alumni university or library
-   affiliation? If yes → use it, it's free to you and the gold standard. Stop here.
-2. **If no CRSP → Sharadar.** Verify *current* pricing, access, and trial/sample
-   terms on Nasdaq Data Link, then run the trial protocol below. Lowest friction,
-   both data legs, macOS-native.
-3. **Polygon** only as a cheap API spike if Sharadar is unavailable — and go in
-   knowing you'll likely have to build the terminal-return leg yourself.
-4. **Norgate** only if a Windows VM is acceptable friction (its constituent-history
-   strength may justify it for index-membership work later).
+   affiliation? If yes → use it, it's free to you, the gold standard, *and*
+   exportable (own the data, keep your harness). Stop here.
+2. **If no CRSP → QuantConnect free spike.** Run `quantconnect_terminal_spike.py`
+   in QC Cloud. If terminal returns pass, you have a free survivorship-free
+   research engine (accepting LEAN lock-in). Costs nothing to find out.
+3. **If QC fails or lock-in is unacceptable → Sharadar.** Verify *current* pricing
+   on Nasdaq Data Link, one paid month, run the trial protocol. Owns exportable
+   data, macOS-native, both legs. (Free sample can't test terminal returns —
+   window is 2018 Q4 only.)
+4. **Polygon** only as a cheap API spike if Sharadar is unavailable — you'll
+   likely have to build the terminal-return leg yourself.
+5. **Norgate** only if a Windows VM is acceptable friction (best constituent
+   history, for index-membership work later).
 
 ## One-month validation protocol
 
