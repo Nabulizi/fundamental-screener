@@ -11,10 +11,8 @@ const MAX_TICKERS = Number(process.env.NEXT_PUBLIC_MAX_TICKERS) || DEFAULT_MAX_T
 import { EMPTY_FILTERS } from '@/lib/filters';
 import { runClientScan, type ScanProgress } from '@/lib/clientScan';
 import { sortRows, type SortDir, type SortKey } from '@/lib/sort';
-import {
-  scoreRow,
-  CRITERION_KEYS, CRITERION_LABELS, CRITERION_WEIGHT, CRITERION_BENCHMARK,
-} from '@/lib/scoring';
+import { scoreRow } from '@/lib/scoring';
+import { getScoringMethodology } from '@/lib/methodology';
 import { toCsv } from '@/lib/csv';
 import { serializeShare, parseShare } from '@/lib/shareUrl';
 import type { ScanError, ScanRow } from '@/lib/types';
@@ -29,6 +27,7 @@ interface ScanResult {
 }
 
 const EXAMPLE = 'AAPL, MSFT, KO, JPM, XOM';
+const METHODOLOGY = getScoringMethodology();
 
 function newestTimestamp(rows: ScanRow[]): string | null {
   if (rows.length === 0) return null;
@@ -87,7 +86,7 @@ export default function Page() {
   const [progress, setProgress] = useState<ScanProgress>({ completed: 0, total: 0 });
   const [scannedTickers, setScannedTickers] = useState<string[]>([]);
   const [limited, setLimited] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>('marketCap');
+  const [sortKey, setSortKey] = useState<SortKey>('strength');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null);
@@ -113,10 +112,15 @@ export default function Page() {
   const preview = useMemo(() => parseTickers(input, MAX_TICKERS), [input]);
   // Displayed order = sorted result rows; CSV export uses exactly this.
   const scoreMap = useMemo(() => {
-    if (!result) return new Map<string, number>();
-    const m = new Map<string, number>();
+    if (!result) return new Map<string, { strength: number; risk: number; coverage: number }>();
+    const m = new Map<string, { strength: number; risk: number; coverage: number }>();
     for (const row of result.rows) {
-      m.set(row.ticker, scoreRow(row).strengthScore);
+      const scored = scoreRow(row);
+      m.set(row.ticker, {
+        strength: scored.strengthScore,
+        risk: scored.riskScore,
+        coverage: scored.coverage.fraction,
+      });
     }
     return m;
   }, [result]);
@@ -131,7 +135,7 @@ export default function Page() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'ticker' || key === 'companyName' ? 'asc' : 'desc');
+      setSortDir(key === 'ticker' || key === 'companyName' || key === 'risk' ? 'asc' : 'desc');
     }
   }
 
@@ -234,6 +238,11 @@ export default function Page() {
       <h1>Fundamental Screener</h1>
       <p className="subtitle">
         Compare fundamentals across a watchlist. Enter tickers separated by commas, spaces, or new lines.
+      </p>
+
+      <p className="evidence-status" role="note">
+        <strong>Experimental heuristic · methodology v{METHODOLOGY.version}</strong> — informational research aid,
+        not a validated return forecast or investment recommendation.
       </p>
 
       {fearGreed && (
@@ -378,22 +387,22 @@ export default function Page() {
       )}
 
       <p className="disclaimer">
-        This tool displays publicly reported fundamentals for informational purposes only. It does not
+        This tool displays publicly reported fundamentals for informational research only. It does not
         provide buy, sell, or hold recommendations, and unavailable data is shown as &quot;N/A&quot; — never as zero.
       </p>
 
       {/* Methodology accordion */}
       {result && result.rows.length > 0 && (
         <details className="methodology-section">
-          <summary>How Scoring Works ▾</summary>
+          <summary>How the research heuristic works ▾</summary>
           <div className="methodology-body">
             <p className="methodology-intro">
-              Each stock is evaluated across <strong>10 criteria</strong> drawn from an elite analyst&apos;s
-              composite scoring framework. Every criterion produces a raw signal (+1 / 0 / −1), then
-              is multiplied by its tier weight. The positives and negatives are reported separately as a
-              <strong> Strength Score (0–17)</strong> and a <strong>Risk Score (0–16)</strong> — &quot;how good is
-              the setup?&quot; and &quot;how dangerous is it?&quot; are different questions. This is informational
-              only, not a recommendation.
+              This is <strong>{METHODOLOGY.status}</strong> (methodology v{METHODOLOGY.version}), not a
+              rating or recommendation. Each stock is evaluated across <strong>{METHODOLOGY.criterionCount} criteria</strong>;
+              every criterion produces a raw signal (+1 / 0 / −1) and is multiplied by its weight. Positive
+              and negative signals stay separate: <strong>Strength (0–{METHODOLOGY.maxStrength})</strong> and
+              <strong> Risk (0–{METHODOLOGY.maxRisk})</strong>. Missing data is shown as N/A and can floor the
+              research tier rather than silently counting as favorable.
             </p>
 
             <h4>Benchmark Reference</h4>
@@ -404,12 +413,12 @@ export default function Page() {
                 <tr><th>Criterion</th><th className="bm-weight">Wt</th><th>Scores +1 when</th><th>Scores −1 when</th></tr>
               </thead>
               <tbody>
-                {CRITERION_KEYS.map((k) => (
-                  <tr key={k}>
-                    <td>{CRITERION_LABELS[k]}</td>
-                    <td className="bm-weight">×{CRITERION_WEIGHT[k]}</td>
-                    <td className="bm-pos">{CRITERION_BENCHMARK[k].positive}</td>
-                    <td className="bm-neg">{CRITERION_BENCHMARK[k].negative}</td>
+                {METHODOLOGY.criteria.map((criterion) => (
+                  <tr key={criterion.key}>
+                    <td>{criterion.label}</td>
+                    <td className="bm-weight">×{criterion.weight}</td>
+                    <td className="bm-pos">{criterion.benchmark.positive}</td>
+                    <td className="bm-neg">{criterion.benchmark.negative}</td>
                   </tr>
                 ))}
               </tbody>
@@ -419,17 +428,17 @@ export default function Page() {
             <table className="weight-table">
               <thead><tr><th>Tier</th><th>Weight</th><th>Metrics</th><th>Rationale</th></tr></thead>
               <tbody>
-                <tr><td>Survival &amp; Quality</td><td>×3</td><td>Earnings Quality, Leverage</td><td>A −3 here can mean permanent loss. These are eliminators.</td></tr>
-                <tr><td>Fundamental Strength</td><td>×2</td><td>Revenue Growth, FCF Yield, P/E Compression</td><td>Core business quality — strongly predictive but recoverable if one is weak.</td></tr>
-                <tr><td>Valuation, Timing &amp; Income</td><td>×1</td><td>EV/EBITDA, Div Coverage, 52W Pos, YTD, Div Yield</td><td>Useful context, not convictions on their own.</td></tr>
+                <tr><td>Survival &amp; Quality</td><td>×3</td><td>Earnings Quality, Leverage</td><td>Higher weight because these inputs describe material business risk; they are heuristics, not proof.</td></tr>
+                <tr><td>Fundamental Strength</td><td>×2</td><td>Revenue Growth, Acceleration, FCF Yield, Margin Inflection, P/E Compression</td><td>Business and estimate context; not independently validated as predictive.</td></tr>
+                <tr><td>Valuation, Timing &amp; Income</td><td>×1</td><td>EV/EBITDA, Div Coverage, 52W Position, YTD, Div Yield</td><td>Contextual signals with lower weight.</td></tr>
               </tbody>
             </table>
 
             <h4>Hard Floors</h4>
-            <p>A stock is forced to <strong>Weak</strong> regardless of its Strength Score when either:
-            it scores −1 on Earnings Quality or Leverage (a Tier 1 elimination — fake earnings or fatal
-            debt), or its <strong>Risk Score reaches 8+</strong> (too many red flags to offset). The Strength
-            Score ranks what&apos;s good; the floors eliminate what&apos;s dangerous. (Exception: a <em>benign</em>
+            <p>A stock is forced to <strong>Weak</strong> regardless of its Strength Score when a hard
+            rule fires: insufficient coverage, Risk Score {METHODOLOGY.riskFloor}+, or a critical
+            Earnings Quality/Leverage rule. The Strength Score describes positive signals; it does not
+            override risk. (Exception: a <em>benign</em>
             Earnings-Quality −1 — see Adjustments — is waived from the floor.)</p>
 
             <h4>Adjustments</h4>
@@ -442,34 +451,18 @@ export default function Page() {
 
             <h4>Signal Tiers</h4>
             <ul className="tier-list">
-              <li><span className="tier-dot tier-strong" /> <strong>Strong (Strength 12+ / 17):</strong> multiple positive signals aligned across all tiers</li>
-              <li><span className="tier-dot tier-moderate" /> <strong>Moderate (Strength 7–11 / 17):</strong> some positive signals; mixed picture</li>
-              <li><span className="tier-dot tier-weak" /> <strong>Weak (Strength &lt;7, Risk 8+, or disqualified):</strong> insufficient evidence or a critical red flag</li>
+              {METHODOLOGY.tierRules.map((rule) => (
+                <li key={rule.label}><span className={`tier-dot tier-${rule.label.toLowerCase()}`} /> <strong>{rule.label}:</strong> {rule.rule}</li>
+              ))}
             </ul>
 
-            <h4>The 10 Scoring Reads (ordered by significance)</h4>
+            <h4>The {METHODOLOGY.criterionCount} scoring reads (ordered by significance)</h4>
             <ol className="reads-list">
-              <li><strong>Earnings Quality</strong> <em className="tier-tag">×3</em> — Compares FCF Yield to Earnings Yield (100÷P/E). When FCF exceeds
-                earnings yield, cash flows confirm reported earnings. Your fraud filter.
-                <em>+3 if FCF Yield &gt; EY by 1pp+, −3 if below.</em></li>
-              <li><strong>Leverage (D/E)</strong> <em className="tier-tag">×3</em> — Permanent capital loss prevention. A great business with fatal
-                debt goes to zero. <em>+3 if &lt;1.0, −3 if 2.0–10. Neutralized for financials and for buyback-distorted equity (negative or D/E &gt; 10).</em></li>
-              <li><strong>Revenue Growth</strong> <em className="tier-tag">×2</em> — The foundation of all forward estimates. Declining revenue makes
-                every other bullish signal suspect. <em>+2 if &gt;10%, −2 if negative.</em></li>
-              <li><strong>FCF Yield Level</strong> <em className="tier-tag">×2</em> — Core value signal. Once you know earnings are real,
-                FCF yield tells you if the price is fair. <em>+2 if &gt;5%, −2 if &lt;2%.</em></li>
-              <li><strong>P/E Compression</strong> <em className="tier-tag">×2</em> — Analyst expectations, grounded by the fundamentals above.
-                <em>+2 if FWD &lt; TTM, −2 if FWD &gt; TTM. Neutralized for cyclicals (peak-earnings trap).</em></li>
-              <li><strong>Valuation (EV/EBITDA)</strong> <em className="tier-tag">×1</em> — Leverage-adjusted cross-check on FCF and P/E.
-                <em>+1 if &lt;15, −1 if &gt;25.</em></li>
-              <li><strong>Dividend Coverage</strong> <em className="tier-tag">×1</em> — More fundamental than price position — a broken dividend
-                destroys the investment thesis. <em>+1 if FCF covers dividend, −1 if not. Non-payers: 0.</em></li>
-              <li><strong>52-Week Position</strong> <em className="tier-tag">×1</em> — Entry timing. Technical, not fundamental — belongs after all
-                business quality reads. <em>+1 if &lt;40%, −1 if &gt;90%.</em></li>
-              <li><strong>YTD Momentum</strong> <em className="tier-tag">×1</em> — Weakest fundamental signal. Useful confirmation, not a driver.
-                <em>+1 if positive, −1 if negative.</em></li>
-              <li><strong>Dividend Yield</strong> <em className="tier-tag">×1</em> — Income enhancement only. The least predictive of the 10.
-                <em>+1 if &gt;1.5%. Non-payers: 0. Never negative.</em></li>
+              {METHODOLOGY.criteria.map((criterion) => (
+                <li key={criterion.key}><strong>{criterion.label}</strong> <em className="tier-tag">×{criterion.weight}</em> —
+                  scores +1 / 0 / −1 using the benchmark shown above. This is a mechanical heuristic;
+                  it is not a fraud, distress, or return forecast.</li>
+              ))}
             </ol>
           </div>
         </details>
@@ -488,8 +481,9 @@ export default function Page() {
                 macroeconomic shifts are invisible to any purely quantitative screen.</li>
               <li><strong>Data staleness:</strong> Metrics are trailing (TTM) or most-recent-quarter; forward estimates
                 rely on analyst consensus that can change rapidly.</li>
-              <li><strong>Missing data:</strong> If a metric is unavailable (N/A), that criterion scores 0 rather than
-                penalizing or rewarding — this can inflate scores for thinly-covered stocks.</li>
+              <li><strong>Missing data:</strong> An unavailable metric is neutral for that criterion, but low
+                overall coverage or missing risk-critical inputs floors the research tier. Coverage is still
+                not proof that the remaining inputs are correct.</li>
             </ul>
           </div>
         </details>

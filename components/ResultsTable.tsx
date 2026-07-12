@@ -20,6 +20,12 @@ const FRESHNESS_TITLE: Record<Freshness, string> = {
   stale: 'Older than 15 minutes — use Refresh for current data'
 };
 
+const TIER_LABEL: Record<SignalTier, string> = {
+  strong: 'Higher alignment',
+  moderate: 'Mixed signals',
+  weak: 'Insufficient / flagged',
+};
+
 function FreshnessBadge({ freshness }: { freshness: Freshness }) {
   return (
     <span className={`badge badge-${freshness}`} title={FRESHNESS_TITLE[freshness]}>
@@ -105,19 +111,21 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
-  { key: 'ticker', label: 'Symbol', numeric: false, sortable: true, identity: true, width: '13%' },
-  { key: 'score' as SortKey, label: 'Score', numeric: true, sortable: true, width: '5%', render: () => null /* handled specially */ },
+  { key: 'ticker', label: 'Symbol', numeric: false, sortable: true, identity: true, width: '11%' },
+  { key: 'strength', label: 'Strength', numeric: true, sortable: true, width: '5%', render: () => null /* handled specially */ },
+  { key: 'risk', label: 'Risk', numeric: true, sortable: true, width: '5%', render: () => null /* handled specially */ },
+  { key: 'coverage', label: 'Data', numeric: true, sortable: true, width: '6%', render: () => null /* handled specially */ },
   { key: 'marketCap', label: 'Mkt Cap', numeric: true, sortable: true, width: '8%', render: (r) => formatMarketCap(r.marketCap, r.currency) },
-  { key: 'currentPrice', label: 'Price', numeric: true, sortable: false, width: '7%', render: (r) => formatCurrency(r.currentPrice ?? null, r.currency) },
-  { key: 'ytdReturn', label: 'YTD', numeric: true, sortable: true, width: '7%', render: (r) => formatReturn(r.ytdReturn) },
-  { key: 'week52High', label: '52W Range', numeric: false, sortable: false, center: true, width: '13%', render: (r) => <RangeBar row={r} /> },
-  { key: 'trailingPE', label: 'P/E TTM', numeric: true, sortable: true, width: '7%', render: (r) => formatPe(r.trailingPE) },
-  { key: 'forwardPE', label: 'P/E Fwd', numeric: true, sortable: true, width: '7%', render: (r) => formatPe(r.forwardPE) },
-  { key: 'dividendYieldPercent', label: 'Div Yld', numeric: true, sortable: true, width: '7%', render: (r) => formatPercent(r.dividendYieldPercent) },
-  { key: 'fcfYieldPercent', label: 'FCF Yld', numeric: true, sortable: true, width: '7%', render: (r) => formatPercent(r.fcfYieldPercent) },
-  { key: 'revenueGrowthTTM', label: 'Rev Grw', numeric: true, sortable: true, width: '7%', render: (r) => formatReturn(r.revenueGrowthTTM) },
+  { key: 'currentPrice', label: 'Price', numeric: true, sortable: false, width: '6%', render: (r) => formatCurrency(r.currentPrice ?? null, r.currency) },
+  { key: 'ytdReturn', label: 'YTD', numeric: true, sortable: true, width: '6%', render: (r) => formatReturn(r.ytdReturn) },
+  { key: 'week52High', label: '52W Range', numeric: false, sortable: false, center: true, width: '12%', render: (r) => <RangeBar row={r} /> },
+  { key: 'trailingPE', label: 'P/E TTM', numeric: true, sortable: true, width: '6%', render: (r) => formatPe(r.trailingPE) },
+  { key: 'forwardPE', label: 'P/E Fwd', numeric: true, sortable: true, width: '6%', render: (r) => formatPe(r.forwardPE) },
+  { key: 'dividendYieldPercent', label: 'Div Yld', numeric: true, sortable: true, width: '6%', render: (r) => formatPercent(r.dividendYieldPercent) },
+  { key: 'fcfYieldPercent', label: 'FCF Yld', numeric: true, sortable: true, width: '6%', render: (r) => formatPercent(r.fcfYieldPercent) },
+  { key: 'revenueGrowthTTM', label: 'Rev Grw', numeric: true, sortable: true, width: '6%', render: (r) => formatReturn(r.revenueGrowthTTM) },
   { key: 'debtToEquity', label: 'D/E', numeric: true, sortable: true, width: '5%', render: (r) => formatRatio(r.debtToEquity) },
-  { key: 'evToEbitda', label: 'EV/EBITDA', numeric: true, sortable: true, width: '7%', render: (r) => formatRatio(r.evToEbitda) }
+  { key: 'evToEbitda', label: 'EV/EBITDA', numeric: true, sortable: true, width: '6%', render: (r) => formatRatio(r.evToEbitda) }
 ];
 
 function ariaSortValue(active: boolean, dir: SortDir): 'ascending' | 'descending' | 'none' {
@@ -174,10 +182,10 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
         <span className="table-summary">
           {rows.length} {rows.length === 1 ? 'company' : 'companies'} · Updated {updatedLabel}
         </span>
-        <div className="conviction-summary" title="Composite signal strength — informational only, not a recommendation">
-          <span className="tier-badge tier-strong">{tierCounts.strong} Strong</span>
-          <span className="tier-badge tier-moderate">{tierCounts.moderate} Moderate</span>
-          <span className="tier-badge tier-weak">{tierCounts.weak} Weak</span>
+        <div className="conviction-summary" title="Experimental heuristic tiers — informational only, not a recommendation">
+          <span className="tier-badge tier-strong">{tierCounts.strong} {TIER_LABEL.strong}</span>
+          <span className="tier-badge tier-moderate">{tierCounts.moderate} {TIER_LABEL.moderate}</span>
+          <span className="tier-badge tier-weak">{tierCounts.weak} {TIER_LABEL.weak}</span>
         </div>
         <div className="freshness-legend" aria-hidden="true">
           <FreshnessBadge freshness="fresh" /> just fetched
@@ -246,22 +254,25 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                       </td>
                     );
                   }
-                  // Score column: clickable cell with color + toggle
-                  if (col.key === 'score' && scored) {
+                  // Strength is the expandable evidence entry point. Risk and
+                  // coverage remain separate visible metrics and sort values.
+                  if (col.key === 'strength' && scored) {
                     return (
                       <td
                         key={`${row.ticker}-${idx}`}
                         className={`num score-cell score-${tier}${scored.flags.disqualified ? ' score-disqualified' : ''}`}
-                        title={`Strength ${scored.strengthScore}/${MAX_STRENGTH} · Risk ${scored.riskScore}/${MAX_RISK} · Data ${scored.coverage.covered}/${scored.coverage.applicable} — click to ${isExpanded ? 'hide' : 'show'} breakdown`}
+                        title={`Strength ${scored.strengthScore}/${MAX_STRENGTH} — click to ${isExpanded ? 'hide' : 'show'} evidence`}
                         onClick={() => toggleExpanded(row.ticker)}
                         role="button"
                         tabIndex={0}
+                        aria-expanded={isExpanded}
+                        aria-controls={`${row.ticker}-breakdown`}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(row.ticker); } }}
                       >
                         <span className="score-value">{scored.strengthScore}</span>
                         <span className="score-max">/{MAX_STRENGTH}</span>
                         {(scored.flags.disqualified || scored.riskScore >= RISK_FLOOR) && (
-                          <span className="score-flag" title={scored.flags.disqualified ? 'Disqualified: critical Tier 1 failure' : `Elevated risk (${scored.riskScore}/${MAX_RISK})`}>⚠</span>
+                          <span className="score-flag" title={scored.flags.disqualified ? 'Hard floor: critical input rule' : `Elevated risk (${scored.riskScore}/${MAX_RISK})`}>⚠</span>
                         )}
                         {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < RISK_FLOOR && (
                           <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
@@ -272,6 +283,12 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                         <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
                     );
+                  }
+                  if (col.key === 'risk' && scored) {
+                    return <td key={`${row.ticker}-${idx}`} className="num" title={`Risk signals: ${scored.riskScore}/${MAX_RISK}`}>{scored.riskScore}/{MAX_RISK}</td>;
+                  }
+                  if (col.key === 'coverage' && scored) {
+                    return <td key={`${row.ticker}-${idx}`} className="num" title={`${scored.coverage.covered} of ${scored.coverage.applicable} applicable criteria have data`}>{scored.coverage.covered}/{scored.coverage.applicable}</td>;
                   }
                   const value = col.render ? col.render(row) : null;
                   const cls = [col.numeric ? 'num' : '', col.truncate ? 'truncate' : ''].filter(Boolean).join(' ');
@@ -285,7 +302,7 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
               </tr>
               {/* Expandable breakdown row */}
               {isExpanded && scored && (
-                <tr key={`${row.ticker}-breakdown`} className="breakdown-row">
+                <tr id={`${row.ticker}-breakdown`} key={`${row.ticker}-breakdown`} className="breakdown-row">
                   <td colSpan={COLUMNS.length}>
                     <div className="breakdown-grid">
                       {CRITERION_KEYS.map((k) => {
@@ -339,7 +356,7 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                     </div>
                     {scored.flags.disqualified && (
                       <div className="breakdown-warning">
-                        ⚠ Disqualified — critical failure in {eqDisqualifies ? 'Earnings Quality' : ''}{eqDisqualifies && levDisqualifies ? ' and ' : ''}{levDisqualifies ? 'Leverage' : ''}. A Tier 1 elimination forces a Weak signal regardless of strength.
+                        ⚠ Hard floor — critical rule in {eqDisqualifies ? 'Earnings Quality' : ''}{eqDisqualifies && levDisqualifies ? ' and ' : ''}{levDisqualifies ? 'Leverage' : ''}. This forces the research alignment label low regardless of Strength.
                       </div>
                     )}
                   </td>

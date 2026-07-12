@@ -26,6 +26,8 @@ import SnapshotHistoryPanel from '@/components/SnapshotHistoryPanel';
 import Explain from '@/components/Explain';
 import { tierGloss } from '@/lib/explain/glosses';
 
+const TIER_LABEL = { strong: 'Higher alignment', moderate: 'Mixed signals', weak: 'Insufficient / flagged' } as const;
+
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
   if (cached) return cached;
@@ -151,7 +153,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
           <p className="subtitle">{row.companyName ?? '—'}{row.industry ? ` · ${row.industry}` : ''}</p>
         </div>
         <div className={`tier tier-${scored.tier}`}>
-          <span className="tier-name">{scored.tier}</span>
+          <span className="tier-name">{TIER_LABEL[scored.tier]}</span>
           <span className="tier-scores">
             Strength {scored.strengthScore}/{MAX_STRENGTH} · Risk {scored.riskScore}/{MAX_RISK}
           </span>

@@ -100,8 +100,9 @@ and harness location live in `docs/quant-research-plan.md`.
 - **Tests mock the network.** No live API calls in tests/CI; live checks live only
   in `scripts/probe.mjs`. Adapters accept injected `fetchImpl`/`sleep` via
   `RetryOptions` for deterministic testing.
-- The results table must fit on desktop without horizontal scroll; 52-week
-  low/high are shown inside the range cell, not as separate columns.
+- The results table keeps 52-week low/high inside the range cell. Narrow layouts
+  may use a horizontally scrollable comparison view; essential evidence must also
+  have a compact mobile presentation.
 
 ## Environment
 
@@ -111,15 +112,14 @@ Copy `.env.example` to `.env.local` (git-ignored). `FINNHUB_API_KEY` is required
 `NEXT_PUBLIC_MAX_TICKERS` (default 20), and `CACHE_TTL_SECONDS` (default 60) are
 optional.
 
-> The local `.env.local` may contain `NODE_TLS_REJECT_UNAUTHORIZED=0` as a
-> corporate-proxy workaround. It disables TLS verification (insecure); the proper
-> fix is `NODE_EXTRA_CA_CERTS` pointing at the org root CA. Don't commit it.
+> Never set `NODE_TLS_REJECT_UNAUTHORIZED=0`. It disables TLS verification. For a
+> corporate proxy, install the org root CA and use `NODE_EXTRA_CA_CERTS` instead.
 
 ## Gotchas
 
-- In this sandbox, outbound HTTPS to providers goes through a TLS-intercepting
-  proxy, so live scans/probes from the agent fail unless `NODE_TLS_REJECT_UNAUTHORIZED=0`.
-  The user's machine reaches the providers normally.
+- In restricted environments, outbound HTTPS to providers may require the
+  environment's trusted CA bundle. Do not bypass TLS verification to work around
+  that; use the appropriate CA configuration or treat live probes as unavailable.
 - The in-memory server cache is best-effort on serverless (per-instance).
 - Alpha Vantage free tier is ~25 req/day + ~1 req/sec; `OVERVIEW` (fundamentals)
   is fetched first, `GLOBAL_QUOTE` (price) is best-effort so a throttled price
