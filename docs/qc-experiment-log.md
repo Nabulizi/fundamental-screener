@@ -84,7 +84,52 @@ new preregistered test. Do NOT move to paper/live on one clean backtest.
 
 ---
 
-## Test 005 -- frozen forward-period extension  [PREREGISTERED, not yet run]
+## Test 006 -- attribution / risk decomposition of qv100  [DIAGNOSTIC, not yet run]
+
+- Purpose: understand WHAT drives qv100 before any paper/live. Diagnostic, not a
+  pass/fail test -- no tuning. The decision it informs: is the (marginal) edge real
+  stock-selection, or a sector/size/beta tilt obtainable more cheaply?
+- Measured (frozen qv100 rules), full period + forward 2023+:
+  1. Sector exposure: qv100 average sector weights vs the EW-500 universe -> tilts.
+  2. Size: average market-cap percentile of qv100 holdings within the 500 universe.
+  3. Beta and correlation of qv100 monthly returns to EW-500 (market proxy).
+  4. Cheaper-benchmark check: qv100 Sharpe vs EW top-100 by market cap (is qv
+     better than just owning the 100 biggest?).
+  5. Factor sanity: qv100 avg FCF yield and ROE vs universe (confirm construction).
+- Interpretation guide: a large single-sector overweight, an extreme size tilt, or
+  qv failing to beat EW-top-100 would mean the "edge" is a factor/sector bet, not
+  durable selection -> not worth trading as stock-picking.
+- DEFERRED to Test 007 (if this warrants it): sector-neutral random null,
+  sector-neutral qv, momentum/leverage exposures, per-name contributors/detractors.
+
+---
+
+## Test 005 -- frozen forward-period extension  [RUN: PASS but MARGINAL]
+
+Forward slice 2023-01 .. 2026-04 (data end), net@10bps:
+
+| Breadth | qv Sharpe | CAGR | MaxDD | hd median | hd p90 | all EW-500 |
+|---|---|---|---|---|---|---|
+| 50  | 1.05 | 15.8% | -11.5% | 1.03 | 1.21 | 1.08 |
+| 100 | 1.11 | 15.7% |  -9.4% | 1.04 | 1.18 | 1.08 |
+
+Verdict: PASS (qv > hd median both breadths) but NOT strong, and materially
+weaker than in-sample. Honest read:
+- GOOD: the edge survived genuinely-forward data (kept its sign) -> not a pure
+  stale-period artifact. Selection skill is real. Most backtested edges fail this.
+- SOBERING: it compressed from top-decile (Test 004 STRONG, > p90) to barely above
+  the random MEDIAN (+0.02 Sharpe at B50, +0.07 at B100). It did NOT beat the
+  EW-500 null forward at B50 (1.05 < 1.08); ties at B100. The hd distribution
+  itself rose to ~1.0 Sharpe (vs ~0.83) -- 2023-2026 was a benign broad rally
+  (shallow -9 to -11% DD), and selection matters less when everything rises. The
+  edge is REGIME-SENSITIVE.
+Conclusion: a small, real, regime-sensitive tilt -- NOT the strong alpha the
+in-sample STRONG-PASS implied. The forward compression is a hint of a possible
+hidden/time-varying exposure. Do NOT proceed to paper/live on this.
+
+Next (now MORE important, not less): the frozen audit -- sector exposures, top
+holdings by year, factor tilts -- to learn WHETHER the faded edge is a hidden
+sector/factor bet. That diagnostic, not a strategy report, is the right next step.
 
 - Motivation: Test 004 OOS (2016-2022) is still in-period. The decisive check is
   genuinely FORWARD data the signal never touched. Catches stale-period artifacts.
