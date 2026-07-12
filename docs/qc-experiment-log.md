@@ -11,6 +11,35 @@ judged only against the criteria stated beforehand.
 Code: `should-i-trade/quantconnect_v0_fcf_strategy.py` (Test 001) and
 `should-i-trade/quantconnect_quality_value.py` (Test 002+, MODE toggles the arm).
 
+## CONCLUSION after clean re-run (post-NaN-fix, commit fba1cc2): qv100 is NOT a tradeable edge
+
+A NaN sanitation bug (fcf_yield/roe could be NaN; isinstance(nan,float)=True) had
+contaminated the ranking with ~130-143 names/month (dropped_nan logs) since Test
+002, sorted arbitrarily -- and it had INFLATED results. Re-running Tests 002-006
+frozen on clean data:
+
+- IN-PERIOD (2010-2022): edge survives but smaller. Test 004 clean B50 Sharpe
+  0.92@10bps (>hd p90 0.91), B100 0.97 (>p90 0.89), robust to 50bps; Test 003 qv
+  beats random median at all breadths (STRONG at 100). Real modest in-sample skill.
+- FORWARD (2023-2026), the decisive test: FAIL. Test 005 clean FWD B50 qv 0.97 <
+  hd median 0.99; B100 qv 1.03 < hd median 1.04 -- BELOW a random same-breadth
+  portfolio at both breadths. Test 006 clean FWD qv 1.04 < EW500 1.09 < EWtop100
+  1.26. Forward it loses to random, to equal-weight-500, and to the dumb top-100.
+- Attribution: not a sector/size bet (Tech +4.9%, Utils -5.1% moderate tilts; size
+  0.54; beta ~1.0, corr 0.97). Factor construction confirmed (qv FCF yield 0.092 vs
+  0.048, ROE 1.35 vs 0.46). Just a market-beta portfolio that did not select well
+  forward.
+
+VERDICT: quality_value had real in-sample selection skill (2010-2022) that DID NOT
+PERSIST out-of-period. Once the implementation bug was removed, the forward edge
+went with it. Not a candidate strategy. Do NOT paper/live trade it.
+
+Value of the process: the discipline (null controls, breadth-matching, cost
+robustness, forward extension, and the attribution that exposed the NaN bug) did
+its job -- it stopped a signal that looked strong in-sample from reaching real
+money on a false positive. The free survivorship-free QC research engine + the
+preregistration/experiment-log method remain, ready for the next hypothesis.
+
 ---
 
 ## Test 001 -- naive FCF-yield rank  [RUN: FALSIFIED]
@@ -84,7 +113,30 @@ new preregistered test. Do NOT move to paper/live on one clean backtest.
 
 ---
 
-## Test 006 -- attribution / risk decomposition of qv100  [DIAGNOSTIC, not yet run]
+## Test 006 -- attribution / risk decomposition of qv100  [RUN: TEMPERING + BUG FOUND]
+
+- Sector: moderate tilts only -- underweight Utils -4.9%, RealEst -3.7%; overweight
+  FinSvc +3.6%, Tech +2.4%. NOT a concentrated sector bet (quality avoids low-ROE
+  bond-proxies, as expected).
+- Size: mktcap percentile 0.55 -- essentially size-neutral. Not a size bet.
+- Market: beta 0.99, corr 0.95 -- a market-beta portfolio with a small premium.
+- Benchmarks: FULL qv Sharpe 1.11 > EW500 0.99 > EWtop100 0.93 (qv wins in-sample).
+  **FWD2023 qv 1.13, EW500 1.09, EWtop100 1.26 -- the trivial equal-weight top-100
+  by market cap BEAT qv forward.** A zero-signal big-cap portfolio outperformed the
+  whole construction once the regime turned mega-cap. Strongest evidence yet that
+  this is not durable selection alpha.
+- BUG FOUND: fcf_yield/roe can be NaN; isinstance(nan,float) is True so the filter
+  passed them, and Python sorts NaN keys arbitrarily -> the qv ranking has included
+  NaN-contaminated names in arbitrary slots since Test 002. Fix: require
+  math.isfinite. Unknown whether clean data strengthens or weakens the edge.
+
+Overall read after Tests 001-006: quality_value is a SMALL, market-like (beta~1),
+regime-sensitive quality/value tilt. It survived forward data in sign (Test 005)
+but compressed to marginal, and a dumb EW-top-100 beat it forward (Test 006). It is
+NOT a concentrated sector/size bet, but also NOT demonstrated durable alpha. Honest
+provisional conclusion: not worth paper trading as stock-picking on this evidence.
+Final rigor gate before concluding: fix the NaN bug and re-run the forward test
+(Test 005) on clean data to confirm the marginal result is not a NaN artifact.
 
 - Purpose: understand WHAT drives qv100 before any paper/live. Diagnostic, not a
   pass/fail test -- no tuning. The decision it informs: is the (marginal) edge real
