@@ -11,6 +11,28 @@ judged only against the criteria stated beforehand.
 Code: `should-i-trade/quantconnect_v0_fcf_strategy.py` (Test 001) and
 `should-i-trade/quantconnect_quality_value.py` (Test 002+, MODE toggles the arm).
 
+## Methodology audit (2026-07-11): synthetic Tests 003-006 have attrition bias
+
+Tests 003-006 calculate prior portfolio returns from a `cur` price dictionary
+built only from the newly eligible universe. If a prior holding delists, loses a
+required fundamental, or falls outside the new top 500, its holding-period return
+is silently omitted from the equal-weight mean. These scripts do not hold the
+synthetic portfolios in QC, so the terminal-event behavior proven by the separate
+terminal spike does not repair this omission.
+
+Therefore the exact random-control, cost, forward, and return-attribution metrics
+from Tests 003-006 are **INVALID**. This new audit does not promote quality/value:
+Test 002 used actual QC holdings and rejected qv20. The qv50/100 result is unproven,
+not exonerated; the explored family remains closed and is not a trading candidate.
+The program will not spend a new experiment repairing it. Future synthetic
+controls must retain every prior holding through the return date and consume its
+terminal value; a missing return invalidates the period instead of reducing the
+denominator.
+
+The independent research program from `QR-008` onward lives in the sibling
+`../quant-research` repository. This file remains the historical record for
+`QR-001` through `QR-007`.
+
 ## CONCLUSION after clean re-run (post-NaN-fix, commit fba1cc2): qv100 is NOT a tradeable edge
 
 A NaN sanitation bug (fcf_yield/roe could be NaN; isinstance(nan,float)=True) had

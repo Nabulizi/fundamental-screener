@@ -1,8 +1,20 @@
 # Research summary: building an honest quant research loop (and killing a bad signal)
 
 Capstone for the work logged in `qc-experiment-log.md` and `quant-research-plan.md`.
-The outcome is a validated research process and a **falsified** signal -- which is
-the process working, not failing.
+The outcome is an improving research process and a rejected signal family -- which
+is the process working, not failing.
+
+**Later methodology audit (2026-07-11):** the synthetic portfolio machinery in
+Tests 003-006 omitted prior holdings that left the next eligible universe, rather
+than realizing their terminal/holding-period returns. Their exact random-control
+and forward metrics are invalid. Test 002 still rejects qv20 using actual QC
+holdings; qv50/100 is unproven and closed, not validated by those later tests. See
+the experiment log for the audit and the guardrail required for future synthetic
+controls.
+
+New hypotheses from `QR-008` onward are owned by the independent sibling
+`../quant-research` repository. The application repositories retain the earlier
+code and record for provenance.
 
 ## 1. Data path -- VALIDATED
 
