@@ -178,6 +178,23 @@ longitudinal record needed to eventually validate scoring thresholds against
 forward returns. `npm run snapshots` prints a summary. Set
 `SNAPSHOTS_DISABLED=1` to turn recording off.
 
+### Daily snapshot scan (recommended)
+
+Snapshots are the only restatement-free record of what the app knew on each
+date — they cannot be backfilled later. To accumulate them automatically:
+
+1. Create `data/universe.txt` (one ticker per line, `#` comments allowed), or
+   set `SNAPSHOT_TICKERS`.
+2. Run `npm run snapshot:daily`. It scans the universe through the real
+   `/api/scan` route (starting a temporary `next start` if no server is up,
+   building first if needed) and exits non-zero if nothing was recorded.
+   First-fresh-per-day dedupe makes repeat runs harmless.
+3. To schedule it on macOS, fill in the two placeholders in
+   `scripts/com.fundamental-screener.daily-snapshot.plist` (absolute node 20
+   path and repo path), copy it to `~/Library/LaunchAgents/`, and
+   `launchctl load` it. It runs weekdays at 16:30 local; the log is at
+   `/tmp/fundamental-screener-snapshot.log`.
+
 ## Known provider limitations
 
 - Finnhub free tier is roughly 60 requests/minute (plan-dependent and subject to
