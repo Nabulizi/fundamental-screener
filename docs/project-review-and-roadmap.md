@@ -29,9 +29,9 @@ Implemented in the current working tree:
 - P0-B: experimental/unvalidated status is visible; unsupported authority/predictive wording was removed from the main methodology surface; detail labels are more neutral.
 - P0-C: Strength, Risk, and Data Coverage are separate sortable columns; CSV exports include score evidence and scoring version.
 - P0-D: scan request bodies are bounded, responses are `no-store`, and in-process scan/refresh budgets return `429` with `Retry-After`.
-- P0-E (partial): security headers, Node/npm runtime pinning, `.nvmrc`, and TLS-safe environment guidance were added.
+- P0-E (complete): security headers, Node/npm runtime pinning, `.nvmrc`, and TLS-safe environment guidance were added. The dependency upgrade pass landed: Next 14.2 → 16.2.10 (React 18 retained — Next 16 still supports it), `postcss` forced to ≥ 8.5.10 via an npm override (Next pins a vulnerable version internally), ESLint 8 → 9 with a flat config (`eslint.config.mjs`; Next 16 removed `next lint`, the lint script now invokes `eslint .` directly). `npm audit --omit=dev` reports **0 vulnerabilities**. The only migration code change was the async `params` signature in `app/[ticker]/page.tsx`. A contract test (`test/securityHeaders.test.ts`) pins the security headers; they were also verified live against the built server. Remaining known dev-only advisory: `esbuild <=0.24.2` (moderate, dev-server-only SSRF, via the vitest 2.x chain) — fixing it means a vitest major upgrade, deferred. Two new react-hooks v6 lint rules (`purity`, `set-state-in-effect`) flag five pre-existing patterns and are downgraded to warnings pending a separate refactor.
 
-Still intentionally deferred: the breaking Next.js dependency upgrade and a shared edge rate limiter for multi-instance deployments. Those require a dedicated upgrade/deployment pass.
+Still intentionally deferred: a shared edge rate limiter backend for multi-instance deployments (the pluggable interface exists; see "Production rate limiting" below).
 
 ## Review scope and evidence
 

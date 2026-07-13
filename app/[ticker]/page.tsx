@@ -51,9 +51,9 @@ async function loadSecondary(ticker: string, provider: QuoteProvider, ttlSeconds
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export default async function TickerPage({ params }: { params: { ticker: string } }) {
+export default async function TickerPage({ params }: { params: Promise<{ ticker: string }> }) {
   // Next.js App Router already URI-decodes dynamic segments; don't decode again.
-  const raw = params.ticker.toUpperCase();
+  const raw = (await params).ticker.toUpperCase();
   const parsed = parseTickers(raw, 1);
   // A per-ticker route must be exactly ONE clean ticker — reject multi-token
   // paths like /AAPL,MSFT (which would otherwise silently load AAPL) or any

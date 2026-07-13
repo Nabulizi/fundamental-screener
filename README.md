@@ -22,7 +22,7 @@ research page.
 
 ## Stack
 
-- Next.js 14 (App Router) + TypeScript
+- Next.js 16 (App Router) + TypeScript
 - A server-only API route (`/api/scan`) that holds the API key
 - [Finnhub](https://finnhub.io) as the data provider, behind a swappable
   `QuoteProvider` interface
