@@ -50,7 +50,9 @@ describe('ValuationPanel', () => {
     localStorage.setItem(CASES_KEY, serializeCases([c]));
     renderPanel();
     fireEvent.click(screen.getByText('Load'));
-    // Discount-rate assumption applied (default was 11%).
-    expect(screen.getByText('14%')).toBeInTheDocument();
+    // Discount-rate assumption applied (default was 11%). Target the slider's
+    // <output> — the sensitivity table also renders "14%" as a header.
+    const outputs = screen.getAllByText('14%');
+    expect(outputs.some((el) => el.tagName === 'OUTPUT')).toBe(true);
   });
 });

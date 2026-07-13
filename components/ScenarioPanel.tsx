@@ -2,6 +2,7 @@
 
 import {
   computeScenarios, isInvertedRange, scenarioInputsValid, marketImpliedGrowthPct,
+  intrinsicDcf, terminalContribution, sensitivityGrid,
   type ScenarioLabel,
 } from '@/lib/dcf';
 import { formatCurrency, formatMarketCap } from '@/lib/format';
@@ -114,6 +115,80 @@ export default function ScenarioPanel({
           ? 'Per share uses the latest annual diluted weighted-average share count (not point-in-time shares outstanding); share count is held constant — no forecasted buybacks or issuance.'
           : 'Per-share unavailable — no share count; showing equity value.'}
       </p>
+
+      {valid && <SensitivitySection
+        effectiveFcf={effectiveFcf}
+        baseGrowthPct={growths.base}
+        coePct={coe}
+        terminalPct={terminal}
+        years={years}
+        currency={currency}
+        shares={hasShares ? shares : null}
+      />}
     </section>
+  );
+}
+
+// Where the Base value comes from (explicit years vs terminal stub) and how it
+// moves with the two least-tuned assumptions. Deterministic, no probabilities.
+function SensitivitySection({
+  effectiveFcf, baseGrowthPct, coePct, terminalPct, years, currency, shares,
+}: {
+  effectiveFcf: number; baseGrowthPct: number; coePct: number; terminalPct: number;
+  years: number; currency: string | null; shares: number | null;
+}) {
+  const base = intrinsicDcf({
+    fcf0: effectiveFcf, growth: baseGrowthPct / 100,
+    discountRate: coePct / 100, terminalGrowth: terminalPct / 100, years,
+  });
+  const tc = terminalContribution(base);
+  const grid = sensitivityGrid(effectiveFcf, baseGrowthPct / 100, years, coePct, terminalPct);
+  const cell = (v: number | null) =>
+    v == null ? 'n.m.' : shares != null ? formatCurrency(v / shares, currency) : formatMarketCap(v, currency);
+
+  return (
+    <div className="sensitivity">
+      <p className={tc.dominant ? 'dcf-warn' : 'scenario-note'}>
+        Terminal value is <strong>{Math.round(tc.fraction * 100)}%</strong> of the Base scenario&rsquo;s
+        present value{tc.dominant
+          ? ' — most of this value rests on the perpetuity assumption, not the explicit forecast.'
+          : '.'}
+      </p>
+      <details className="sensitivity-details">
+        <summary>Sensitivity: cost of equity × terminal growth ▾</summary>
+        <p className="hint">
+          Base-scenario {shares != null ? 'value per share' : 'equity value'} holding the FCF base,
+          growth path, and horizon fixed. &ldquo;n.m.&rdquo; = terminal growth too close to the cost of
+          equity for the math to hold. Assumptions, not probabilities.
+        </p>
+        <div className="peers-scroll">
+          <table className="ft-table sensitivity-table">
+            <thead>
+              <tr>
+                <th>Terminal \ CoE</th>
+                {grid.coePcts.map((c, i) => (
+                  <th key={c} className={i === grid.center.coeIdx ? 'sens-center' : undefined}>{c}%</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grid.terminalPcts.map((tg, ti) => (
+                <tr key={tg}>
+                  <th scope="row" className={ti === grid.center.terminalIdx ? 'sens-center' : undefined}>{tg}%</th>
+                  {grid.values[ti].map((v, ci) => (
+                    <td
+                      key={ci}
+                      className={ti === grid.center.terminalIdx && ci === grid.center.coeIdx ? 'sens-center' : undefined}
+                    >
+                      {cell(v)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
   );
 }
