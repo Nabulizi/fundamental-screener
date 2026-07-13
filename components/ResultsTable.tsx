@@ -14,10 +14,29 @@ import {
   MAX_STRENGTH, MAX_RISK, RISK_FLOOR, disqualificationCauses,
 } from '@/lib/scoring';
 
+// Freshness describes RETRIEVAL time only. The underlying fundamentals are
+// TTM/annual/estimate vintages whose as-of dates the providers do not report,
+// so none of these labels may claim the data itself is current.
 const FRESHNESS_TITLE: Record<Freshness, string> = {
-  fresh: 'Fetched in this scan',
+  fresh: 'Fetched from the provider in this scan',
   cached: 'Served from cache; the original retrieval time is shown',
-  stale: 'Older than 15 minutes — use Refresh for current data'
+  stale: 'Fetched more than 15 minutes ago — Refresh re-fetches from the provider'
+};
+
+// Period-basis tooltips for the metric columns (from the observation model):
+// what window each figure describes, since fetch time is not data currency.
+const PERIOD_TITLE: Partial<Record<SortKey, string>> = {
+  marketCap: 'Point-in-time valuation at the provider’s last update',
+  currentPrice: 'Latest provider quote (may be delayed)',
+  ytdReturn: 'Year-to-date price return',
+  week52High: 'Trailing 52-week price window',
+  trailingPE: 'Trailing twelve months (TTM) earnings',
+  forwardPE: 'Analyst consensus estimate — vintage not reported by the provider',
+  dividendYieldPercent: 'Indicated annual dividend vs current price',
+  fcfYieldPercent: 'TTM free cash flow, computed by this app from Price/FCF',
+  revenueGrowthTTM: 'TTM year-over-year revenue growth',
+  debtToEquity: 'Most recent reported quarter',
+  evToEbitda: 'TTM EBITDA'
 };
 
 const TIER_LABEL: Record<SignalTier, string> = {
@@ -179,24 +198,24 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
   return (
     <>
       <div className="table-head">
-        <span className="table-summary">
-          {rows.length} {rows.length === 1 ? 'company' : 'companies'} · Updated {updatedLabel}
+        <span className="table-summary" title="When this app last fetched from the provider — not when the underlying figures were reported">
+          {rows.length} {rows.length === 1 ? 'company' : 'companies'} · Fetched {updatedLabel}
         </span>
         <div className="conviction-summary" title="Experimental heuristic tiers — informational only, not a recommendation">
           <span className="tier-badge tier-strong">{tierCounts.strong} {TIER_LABEL.strong}</span>
           <span className="tier-badge tier-moderate">{tierCounts.moderate} {TIER_LABEL.moderate}</span>
           <span className="tier-badge tier-weak">{tierCounts.weak} {TIER_LABEL.weak}</span>
         </div>
-        <div className="freshness-legend" aria-hidden="true">
+        <div className="freshness-legend" aria-hidden="true" title="Badges describe fetch time only — fundamentals are TTM/annual figures that update on filing cadence">
           <FreshnessBadge freshness="fresh" /> just fetched
           <FreshnessBadge freshness="cached" /> from cache
-          <FreshnessBadge freshness="stale" /> &gt; 15 min old
+          <FreshnessBadge freshness="stale" /> fetched &gt; 15 min ago
         </div>
       </div>
       <div className="table-wrap" role="region" aria-label="Scan results" tabIndex={0}>
       <table>
         <caption className="sr-only">
-          {rows.length} {rows.length === 1 ? 'company' : 'companies'}. Data last updated: {updatedLabel}.
+          {rows.length} {rows.length === 1 ? 'company' : 'companies'}. Fetched from the provider: {updatedLabel}.
         </caption>
         <colgroup>
           {COLUMNS.map((col, idx) => (
@@ -220,12 +239,12 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                   aria-sort={col.sortable ? ariaSortValue(active, sortDir) : undefined}
                 >
                   {col.sortable ? (
-                    <button type="button" className="sort-btn" onClick={() => onSort(col.key)} title={col.title}>
+                    <button type="button" className="sort-btn" onClick={() => onSort(col.key)} title={col.title ?? PERIOD_TITLE[col.key]}>
                       {col.label}
                       {arrow}
                     </button>
                   ) : (
-                    col.label
+                    <span title={col.title ?? PERIOD_TITLE[col.key]}>{col.label}</span>
                   )}
                 </th>
               );

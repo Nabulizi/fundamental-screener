@@ -7,6 +7,7 @@ import type { QuoteProvider } from '@/lib/provider';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, SCORING_VERSION, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import { buildDataProvenance } from '@/lib/provenance';
+import { observeRow } from '@/lib/observations';
 import { recordSnapshots } from '@/lib/snapshotStore';
 import { getStore } from '@/lib/store';
 import { buildSnapshotHistory } from '@/lib/snapshotHistory';
@@ -207,6 +208,7 @@ export default async function TickerPage({ params }: { params: Promise<{ ticker:
         })}
         crossCheck={crossCheck}
         currency={row.currency}
+        observations={observeRow(row, crossCheck)}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>

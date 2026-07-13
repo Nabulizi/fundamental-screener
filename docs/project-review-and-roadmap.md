@@ -221,6 +221,8 @@ This aligns with [OWASP API4:2023 Unrestricted Resource Consumption](https://owa
 
 ### P1-01/P1-02 — Treat provenance and data quality as part of every metric
 
+> **Implementation status (July 12, 2026):** P1-A/B/C landed as `lib/observations.ts` — an adjacent per-field metadata map (`MetricObservation`: value, source, provider source-field, retrieval time, effectiveAt, period basis, unit, currency, reported/provider-computed/app-computed, quality flags) derived from the probe-verified field map rather than a wrapping migration of `ScanRow`. `effectiveAt` is honestly `null` for every field: neither provider reports filing dates, estimate vintages, or quote times, and the UI copy now says so instead of implying currency. Validators cover the score-driving fields (revenue growth via the scoring sanity bounds, distorted D/E, nonsense yields/multiples/caps) plus `single-source` and `secondary-disagrees` (merged from the detail-page cross-check). UI: the detail page's "Data & sources" panel renders per-field basis + flags and a fetched-vs-economically-current explanation; the scan table says "Fetched", header tooltips state each column's period basis, and freshness badges/legend describe retrieval only. Tests: `test/observations.test.ts`. Not yet done from the fuller wishlist below: provider schema/transformation version stamps, distribution-drift metrics, and an operator dashboard.
+
 **Evidence**
 
 - `retrievedAt` is the application's fetch time.

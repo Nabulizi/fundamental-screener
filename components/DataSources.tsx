@@ -1,6 +1,14 @@
 import { formatMarketCap, formatCurrency, formatPe, formatPercent } from '@/lib/format';
 import type { DataProvenance } from '@/lib/provenance';
 import type { CrossCheck, CrossCheckField } from '@/lib/crossCheck';
+import { PERIOD_LABEL, type MetricObservation, type QualityFlag } from '@/lib/observations';
+
+const FLAG_TEXT: Record<QualityFlag, string> = {
+  missing: 'not supplied by the source',
+  implausible: 'outside sanity bounds — neutralized in scoring, verify at the source',
+  'single-source': 'single source (no independent confirmation)',
+  'secondary-disagrees': 'second source materially differs'
+};
 
 const SOURCE_LABEL: Record<'finnhub' | 'alphavantage', string> = {
   finnhub: 'Finnhub',
@@ -25,11 +33,12 @@ function crossCheckText(f: CrossCheckField, currency: string | null): string {
 // Static "Data & sources" block — provider, freshness, coverage, and a
 // reported-vs-computed legend. No score, no color, no per-metric badges. The
 // live "FCF base in use" is shown with the valuation UI, not here.
-export default function DataSources({ model, crossCheck, currency }: { model: DataProvenance; crossCheck: CrossCheck; currency: string | null }) {
+export default function DataSources({ model, crossCheck, currency, observations }: { model: DataProvenance; crossCheck: CrossCheck; currency: string | null; observations?: MetricObservation[] }) {
   const sourceText = model.source ? SOURCE_LABEL[model.source] : 'Unknown';
-  const freshness = model.cached
-    ? `Cached, as of ${new Date(model.retrievedAt).toLocaleString()}`
-    : `Fresh, retrieved ${new Date(model.retrievedAt).toLocaleString()}`;
+  // "Retrieved" is fetch time only — the underlying figures are TTM/annual/
+  // estimate vintages whose effective dates the providers do not report.
+  const freshness = `retrieved ${new Date(model.retrievedAt).toLocaleString()}${model.cached ? ' (served from cache)' : ''}`;
+  const flagged = (observations ?? []).filter((o) => o.qualityFlags.some((f) => f !== 'single-source'));
 
   const coverage =
     model.historyYears === 0
@@ -59,6 +68,31 @@ export default function DataSources({ model, crossCheck, currency }: { model: Da
 
       {model.insufficientData && (
         <p className="hint">Scorecard floored to Weak — insufficient data coverage for this ticker.</p>
+      )}
+
+      {observations && observations.length > 0 && (
+        <div className="ds-observations">
+          <dt>Field basis &amp; quality</dt>
+          <dd>
+            <ul className="ds-xcheck-list">
+              {observations.map((o) => (
+                <li key={o.key}>
+                  <span className="ds-xcheck-label">{o.label}:</span>{' '}
+                  {PERIOD_LABEL[o.period]} · {o.reportedOrComputed.replace('-', ' ')}
+                  {o.qualityFlags.filter((f) => f !== 'single-source').map((f) => (
+                    <span key={f} className="dq-flag"> · ⚑ {FLAG_TEXT[f]}</span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+            <span className="hint">
+              &ldquo;Retrieved&rdquo; above is when this app fetched the data. The providers do not report
+              effective/as-of dates (filing date, estimate vintage, quote time), so a recent fetch does
+              not mean the underlying TTM/annual figures are current.
+              {flagged.length === 0 ? '' : ` ${flagged.length} field${flagged.length === 1 ? '' : 's'} flagged above.`}
+            </span>
+          </dd>
+        </div>
       )}
 
       <div className="ds-xcheck">
