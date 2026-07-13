@@ -1200,6 +1200,25 @@ tr.row-weak { background: transparent; }
   .scenario-shared { gap: 0.75rem; }
 }
 
+/* Validation evidence registry (P4-E) — neutral badges, warning tone only for
+   the two verdicts that withdraw a claim. */
+.evidence-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.evidence-verdict {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ev-falsified, .ev-invalidated { color: var(--danger); border-color: var(--danger); }
+.ev-supported-within-scope { color: var(--accent); border-color: var(--accent); }
+.evidence-scope { margin-top: 0.15rem; color: var(--text); }
+.evidence-meta { color: var(--muted); font-size: 0.8em; }
+
 /* Terminal-value contribution + CoE × terminal-growth sensitivity (P3-A) */
 .sensitivity { margin-top: 0.75rem; }
 .sensitivity-details summary {

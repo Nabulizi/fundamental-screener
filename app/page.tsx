@@ -13,6 +13,7 @@ import { sortRows, type SortDir, type SortKey } from '@/lib/sort';
 import { distinctCurrencies, mixedCurrency } from '@/lib/comparability';
 import { scoreRow } from '@/lib/scoring';
 import { getScoringMethodology } from '@/lib/methodology';
+import { EVIDENCE_REGISTRY, VERDICT_LABEL } from '@/lib/evidence';
 import { toCsv } from '@/lib/csv';
 import { serializeShare, parseShare } from '@/lib/shareUrl';
 import type { ScanError, ScanRow } from '@/lib/types';
@@ -528,6 +529,31 @@ export default function Page() {
           </div>
         </details>
       )}
+
+      {/* Validation evidence — always visible, not gated behind a scan, so a
+          first-time user can see what has and has not been validated without
+          opening repository docs (P4-E). */}
+      <details className="blind-spots-section evidence-section">
+        <summary>Validation Evidence — What Has Been Tested ▾</summary>
+        <div className="blind-spots-body">
+          <p>
+            Every load-bearing claim, its current verdict, and where the record lives. Verdicts come
+            from preregistered tests in the research log; &ldquo;supported within scope&rdquo; means
+            exactly that scope and nothing more.
+          </p>
+          <ul className="evidence-list">
+            {EVIDENCE_REGISTRY.map((e) => (
+              <li key={e.id}>
+                <span className={`evidence-verdict ev-${e.verdict}`}>{VERDICT_LABEL[e.verdict]}</span>{' '}
+                <strong>{e.claim}</strong>
+                <div className="evidence-scope">
+                  {e.scope} <span className="evidence-meta">({e.source}, as of {e.asOf})</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
 
       {/* Blind spots disclaimer */}
       {result && result.rows.length > 0 && (

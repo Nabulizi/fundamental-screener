@@ -194,4 +194,6 @@ optional.
 - **Bump `SCORING_VERSION`** (`lib/scoring.ts`) whenever criteria, thresholds,
   or weights change — snapshots stamp it to separate methodology eras. Bump
   `SNAPSHOT_SCHEMA_VERSION` (`lib/snapshotStore.ts`) only if the JSONL line
-  format changes.
+  format changes. A version bump also requires an entry in the evidence
+  registry (`lib/evidence.ts`) for the new version — default verdict
+  `untested` — or `test/evidence.test.ts` fails.

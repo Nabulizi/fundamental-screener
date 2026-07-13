@@ -467,7 +467,7 @@ Effort is an estimate for one experienced engineer with the existing test suite.
 | P4-B | Prove point-in-time availability for all inputs | Coverage/lag/restatement audit by criterion. |
 | P4-C | Run survivorship-free validation with robust nulls | Reproducible report with uncertainty, costs, factors, and failure audit. |
 | P4-D | Hold untouched forward period | Frozen prospective result. |
-| P4-E | Calibrate UI status to evidence | Evidence registry consumed by the application. |
+| P4-E | Calibrate UI status to evidence | **Registry shipped (July 12, 2026):** `lib/evidence.ts` — typed, machine-readable verdicts (`untested / inconclusive / falsified / invalidated / supported-within-scope`) with claim, scope boundary, source doc, and as-of date; rendered as an always-visible "Validation Evidence" section on the home page. Contract tests (`test/evidence.test.ts`) verify source docs exist and fail any `SCORING_VERSION` bump lacking an entry for the new version. Future work: consume signed verdict artifacts from the `../quant-research` repo instead of the in-repo constant. |
 
 The independent `../quant-research` repository should own new experiments, consistent with the current research summary. This application should consume signed/versioned verdict artifacts rather than becoming a backtest workbench.
 
