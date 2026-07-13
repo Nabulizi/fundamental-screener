@@ -432,7 +432,7 @@ Effort is an estimate for one experienced engineer with the existing test suite.
 | P1-B | Add field-level freshness/as-of UI | 1–2d | “Fetched” and “economically current” are never conflated. |
 | P1-C | Add data-quality validators and drift metrics | 2d | Null/suspect/disagreement/freshness rates segmented by provider and metric. |
 | P1-D | Decide USD-only vs FX-normalized scope; enforce it | 1–2d | Cross-currency cap sort/peer median is impossible. |
-| P1-E | Production cache/in-flight coalescing/provider budget telemetry | 2–3d | Measured provider calls per scan fall; concurrent duplicates coalesce. |
+| P1-E | Production cache/in-flight coalescing/provider budget telemetry | 2–3d | **Done (July 12, 2026):** `lib/scan.ts` coalesces concurrent identical provider+ticker fetches through a module-level in-flight map (covers simultaneous scans and scan-vs-detail races; errors propagate to all waiters and are never sticky), and every `ScanResponse` now carries `telemetry` — providerCalls, cacheHits, coalescedJoins, failures — so provider calls per scan and cache hit rate are directly measurable. Tests: `test/coalescing.test.ts`. A shared persistent cross-instance cache remains future deployment work. |
 | P1-F | Upgrade Next safely and add security headers/scanning | 1–3d | Production audit cleared or exceptions documented; E2E passes. |
 
 ### Phase 2 — Core UX redesign (1–2 weeks)
