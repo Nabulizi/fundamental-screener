@@ -18,12 +18,15 @@
 
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const CHUNK = 20; // stay within MAX_TICKERS per request
 const PORT = 4321;
+// Invoke Next through THIS node binary and the repo-local bin — under launchd
+// there is no shell profile, so neither `npx` nor `/usr/bin/env node` resolves.
+const NEXT_BIN = path.join(ROOT, 'node_modules', 'next', 'dist', 'bin', 'next');
 
 async function loadUniverse() {
   const inline = process.env.SNAPSHOT_TICKERS;
@@ -79,10 +82,10 @@ if (!base || !(await serverUp(base))) {
   if (!(await serverUp(base))) {
     if (!existsSync(path.join(ROOT, '.next', 'BUILD_ID'))) {
       console.log('[daily-snapshot] no production build — running next build…');
-      execSync('npx next build', { cwd: ROOT, stdio: 'inherit' });
+      execFileSync(process.execPath, [NEXT_BIN, 'build'], { cwd: ROOT, stdio: 'inherit' });
     }
     console.log(`[daily-snapshot] starting next start on :${PORT}…`);
-    child = spawn('npx', ['next', 'start', '-p', String(PORT)], { cwd: ROOT, stdio: 'ignore' });
+    child = spawn(process.execPath, [NEXT_BIN, 'start', '-p', String(PORT)], { cwd: ROOT, stdio: 'ignore' });
     const deadline = Date.now() + 60_000;
     while (!(await serverUp(base))) {
       if (Date.now() > deadline) {
