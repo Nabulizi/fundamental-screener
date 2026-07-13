@@ -11,6 +11,7 @@ const MAX_TICKERS = Number(process.env.NEXT_PUBLIC_MAX_TICKERS) || DEFAULT_MAX_T
 import { EMPTY_FILTERS } from '@/lib/filters';
 import { runClientScan, type ScanProgress } from '@/lib/clientScan';
 import { sortRows, type SortDir, type SortKey } from '@/lib/sort';
+import { distinctCurrencies, mixedCurrency } from '@/lib/comparability';
 import { scoreRow } from '@/lib/scoring';
 import { getScoringMethodology } from '@/lib/methodology';
 import { toCsv } from '@/lib/csv';
@@ -358,6 +359,14 @@ export default function Page() {
                 return coverage < 100 ? <span className="dq-stat">{coverage}% field coverage</span> : null;
               })()}
             </div>
+          )}
+          {mixedCurrency(displayedRows) && (
+            <p className="meta comparability-note" role="note">
+              ⚑ Rows span multiple or unknown currencies ({distinctCurrencies(displayedRows).join(', ') || 'unknown'}).
+              Market-cap values are shown in each company&apos;s own currency and are <strong>not directly
+              comparable</strong>{sortKey === 'marketCap' ? ' — the current market-cap sort ranks raw numbers across currencies' : ''}.
+              Percentages and ratios remain comparable.
+            </p>
           )}
           <ResultsTable
             rows={displayedRows}

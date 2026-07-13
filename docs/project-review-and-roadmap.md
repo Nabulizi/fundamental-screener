@@ -258,6 +258,8 @@ interface MetricObservation<T> {
 
 ### P1-03/P1-08 — Enforce comparability before ranking or peer aggregation
 
+> **Implementation status (July 12, 2026):** P1-D landed with the conservative (no-FX) scope from the decision log. `lib/comparability.ts` detects mixed/unknown currencies (`mixedCurrency` treats an unknown currency alongside a known one as incomparable) and produces neutral peer warnings (currency + industry alignment). `buildPeerComparison` now suppresses the market-cap median whenever the selected company + peers span mixed/unknown currencies (`medians.mixedCurrency`, rendered as "n.m. (mixed ccy)" with an explanatory tooltip) and reports per-metric observation counts (`medians.counts`, surfaced as tooltips). Ratio/percentage medians stay, because they are currency-independent. The scan table shows a visible-but-not-alarmist note when rows span currencies, with an extra clause when the active sort is market cap (sorting is warned, not blocked — a blocked sort would hide data; the warning names the exact problem). Tests: `test/comparability.test.ts`. FX normalization remains future work and requires an FX source with provenance.
+
 **Evidence**
 
 - Market cap is stored in raw local-currency units and sorted numerically.
