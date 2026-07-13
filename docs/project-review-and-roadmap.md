@@ -29,9 +29,11 @@ Implemented in the current working tree:
 - P0-B: experimental/unvalidated status is visible; unsupported authority/predictive wording was removed from the main methodology surface; detail labels are more neutral.
 - P0-C: Strength, Risk, and Data Coverage are separate sortable columns; CSV exports include score evidence and scoring version.
 - P0-D: scan request bodies are bounded, responses are `no-store`, and in-process scan/refresh budgets return `429` with `Retry-After`.
-- P0-E (complete): security headers, Node/npm runtime pinning, `.nvmrc`, and TLS-safe environment guidance were added. The dependency upgrade pass landed: Next 14.2 → 16.2.10 (React 18 retained — Next 16 still supports it), `postcss` forced to ≥ 8.5.10 via an npm override (Next pins a vulnerable version internally), ESLint 8 → 9 with a flat config (`eslint.config.mjs`; Next 16 removed `next lint`, the lint script now invokes `eslint .` directly). `npm audit --omit=dev` reports **0 vulnerabilities**. The only migration code change was the async `params` signature in `app/[ticker]/page.tsx`. A contract test (`test/securityHeaders.test.ts`) pins the security headers; they were also verified live against the built server. Remaining known dev-only advisory: `esbuild <=0.24.2` (moderate, dev-server-only SSRF, via the vitest 2.x chain) — fixing it means a vitest major upgrade, deferred. Two new react-hooks v6 lint rules (`purity`, `set-state-in-effect`) flag five pre-existing patterns and are downgraded to warnings pending a separate refactor.
+- P0-E (complete): security headers, Node/npm runtime pinning, `.nvmrc`, and TLS-safe environment guidance were added. The dependency upgrade pass landed: Next 14.2 → 16.2.10, `postcss` ≥8.5.10, ESLint 9 flat config, and Vitest 4.1.10. Node is pinned to ≥20.19 because the fixed toolchain uses modern ESM loading. Both production and full `npm audit` report **0 vulnerabilities**. The five React lint findings were either resolved or given narrow, documented hydration/time-snapshot exceptions; lint is warning-free. The local TLS bypass was removed from `.env.local`.
 
-Production rate limiting (July 12, 2026): `lib/requestGuard.ts` now exposes a pluggable `ScanRateLimiter` interface. The route consumes budgets via `takeScanBudget`, which delegates to a limiter registered with `setScanRateLimiter` (intended call site: `instrumentation.ts`) and falls back to the in-process bucket when the shared backend errors — bounded degradation, never unlimited. API-level tests (`test/scanRoute.test.ts`) prove 413/400 body rejection and 429 + `Retry-After` at the route boundary, plus shared-limiter delegation. Deployment requirements are documented in the README ("Request limits"). Still intentionally deferred: shipping a concrete Redis/Upstash adapter (would add a dependency this repo doesn't need until a multi-instance deployment exists).
+Production rate limiting (July 12, 2026): `lib/requestGuard.ts` exposes ticker-weighted scan/refresh budgets, and the client batches four tickers per HTTP request so the 20-ticker product limit and refresh budget agree. `instrumentation.ts` automatically registers the concrete `UpstashScanRateLimiter` when REST credentials exist; shared-backend error/timeout degrades to the bounded local bucket. Client identity is taken only from an explicitly configured, trusted proxy header and is hashed before storage. HTTP 429 stays `RATE_LIMITED` through the client and preserves `Retry-After`. API and client tests cover the boundary behavior.
+
+Scoring/data-quality follow-up (July 12, 2026): methodology v5 introduced a single fail-closed scoring input boundary. Implausible provider values are preserved for provenance but become missing before criteria, coverage, or overlays run. All score-driving fields now appear in the observation registry, single-source flags are visible, and the evidence registry explicitly keeps v5 at `untested` for return prediction. See `docs/scoring-changelog.md`.
 
 ## Review scope and evidence
 
@@ -101,7 +103,7 @@ Severity describes potential user/decision harm, not code style. Confidence is b
 | P1-09 | DCF presents precision without enough uncertainty decomposition | Credibility / psychology | Medium | High | Constant FCF growth, arbitrary default discount rate, terminal concentration, and annual diluted shares need clearer sensitivity. |
 | P1-10 | Runtime/toolchain is not pinned tightly enough for reproducible local testing | Engineering | Medium | High | Node 26 breaks native SQLite and jsdom/localStorage tests while CI uses Node 20. |
 | P1-11 | Snapshot durability and calendar semantics are deployment-sensitive | Reliability / science | Medium | High | Local JSONL/SQLite is not durable on many serverless hosts; “local day” changes by host timezone. |
-| P2-01 | CNN Fear & Greed is weakly related to a fundamental-screening task | Product / psychology | Medium | High | Salient red/green sentiment can prime decisions without being part of a validated model. |
+| P2-01 | **Resolved:** CNN Fear & Greed was removed from the fundamental workflow | Product / psychology | Medium | High | The unrelated salient sentiment cue no longer primes the screening decision. |
 | P2-02 | CSV omits score, risk, coverage, source, and methodology version | Function / auditability | Medium | High | Exported evidence cannot reproduce the decision surface or its provenance. |
 | P2-03 | No end-to-end, accessibility, or visual regression suite | Engineering / usability | Medium | High | Unit strength does not cover the integrated user journey or responsive regressions. |
 
@@ -149,7 +151,7 @@ Severity describes potential user/decision harm, not code style. Confidence is b
 
 **Fix**
 
-- Put an always-visible badge near the score: `Experimental heuristic · not validated for returns · methodology v4`.
+- Put an always-visible badge near the score: `Experimental heuristic · not validated for returns · methodology v5`.
 - Rename the output from `Score` to separate `Strength`, `Risk`, and `Data coverage` columns. Consider removing the single tier until validated.
 - If a summary label remains, use neutral research workflow labels such as `More evidence to review`, `Mixed evidence`, and `Insufficient data / material flags`; test the wording with users.
 - Replace green/red row fills with neutral styling; reserve warning color for explicit data-quality or mathematical invalidity.
@@ -290,7 +292,7 @@ These require different outcomes and tests. Do not use a return backtest to vali
 **Scientific validation program**
 
 1. Freeze `SCORING_VERSION`, eligible universe, rebalance schedule, horizons, costs, benchmark family, exclusions, and pass/fail criteria before results.
-2. Use survivorship-free membership, terminal returns, point-in-time fundamentals, and realistic availability lags for **every** live criterion. If all 12 inputs cannot be reconstructed, test a separately named reduced model; do not imply it validates v4.
+2. Use survivorship-free membership, terminal returns, point-in-time fundamentals, and realistic availability lags for **every** live criterion. If all 12 inputs cannot be reconstructed, test a separately named reduced model; do not imply it validates v5.
 3. Separate endpoints:
    - future 3/6/12-month excess return and rank IC;
    - maximum drawdown/downside semivariance;
@@ -310,7 +312,7 @@ These require different outcomes and tests. Do not use a return backtest to vali
 - Research engine and process: supported by strong internal evidence.
 - Naive FCF-yield signal: falsified.
 - Tested quality/value family: closed as a live candidate; later synthetic metrics invalidated by attrition bias.
-- Full 12-criterion application scorecard v4: untested as a complete point-in-time return model.
+- Full 12-criterion application scorecard v5: untested as a complete point-in-time return model.
 - DCF: deterministic scenario calculator, not a forecast and not empirically calibrated.
 
 ### P1-05/P1-06/P1-07 — Redesign the core user journey
@@ -373,7 +375,7 @@ The DCF math is internally consistent, but its inputs are not sufficiently decom
 
 ### P2-01/P2-02/P2-03 — Remove noise and complete auditability
 
-- Remove Fear & Greed from the default fundamental workflow, or place it in a collapsed, clearly separate `Market context` section with source, timestamp, and no scoring implication.
+- **Implemented July 12, 2026:** removed Fear & Greed and its API route from the fundamental workflow to eliminate an unrelated priming cue and external dependency.
 - Export raw machine-usable values alongside formatted values. Include currency, source, retrieved/effective timestamps, Strength, Risk, coverage, flags, tier, methodology version, and sort/filter state.
 - Add Playwright E2E for input → partial scan → sort/filter → expand → detail → valuation edit → save/load → peer compare → share/export.
 - Add axe accessibility checks and screenshot baselines for desktop/narrow/light/dark if multiple themes are supported.
@@ -536,7 +538,7 @@ Each PR should include before/after behavior, explicit non-goals, unit/integrati
 | Product identity | Research-triage and valuation notebook | Fits actual strengths and avoids unsupported decision authority. |
 | Composite tier | Mark experimental now; consider removing until validated | Current visual authority exceeds evidence. |
 | Currency | USD-only first unless reliable FX provenance is added | Smallest honest fix for comparability. |
-| Fear & Greed | Remove from default flow | Weak task relevance and strong priming effect. |
+| Fear & Greed | **Removed from default flow** | Weak task relevance and strong priming effect. |
 | DCF uncertainty | Deterministic sensitivity before Monte Carlo | Transparent and does not invent distributions. |
 | Research location | Keep new tests in `quant-research` | Preserves separation between product and validation engine. |
 | Filters | Restore focused, evidence-aware filters | A screener needs narrowing, but filters should expose quality/risk rather than multiply heuristics. |

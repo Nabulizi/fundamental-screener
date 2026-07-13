@@ -67,7 +67,7 @@ export default function DataSources({ model, crossCheck, currency, observations 
       </dl>
 
       {model.insufficientData && (
-        <p className="hint">Scorecard floored to Weak — insufficient data coverage for this ticker.</p>
+        <p className="hint">Research alignment is marked Insufficient / flagged because this ticker lacks enough scorecard data.</p>
       )}
 
       {observations && observations.length > 0 && (
@@ -79,7 +79,7 @@ export default function DataSources({ model, crossCheck, currency, observations 
                 <li key={o.key}>
                   <span className="ds-xcheck-label">{o.label}:</span>{' '}
                   {PERIOD_LABEL[o.period]} · {o.reportedOrComputed.replace('-', ' ')}
-                  {o.qualityFlags.filter((f) => f !== 'single-source').map((f) => (
+                  {o.qualityFlags.map((f) => (
                     <span key={f} className="dq-flag"> · ⚑ {FLAG_TEXT[f]}</span>
                   ))}
                 </li>

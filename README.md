@@ -158,16 +158,22 @@ stored raw (null when price/range missing or `high ≤ low`) and clamped to 0–
   instance has its own cache, so hits are not guaranteed across requests.
 - **Rate limits:** on HTTP 429 the app retries **once**, honoring `Retry-After`
   (seconds or HTTP-date), capped with small jitter to avoid retry storms.
-- **Request limits:** `/api/scan` enforces per-client scan and (stricter)
-  refresh budgets and returns `429` with `Retry-After` when exceeded. The
+- **Request limits:** `/api/scan` enforces ticker-weighted per-client scan and
+  refresh budgets and returns `429` with `Retry-After` when exceeded. The UI
+  batches four tickers per request, so a legitimate 20-ticker refresh fits one
+  budget while a second immediate refresh is rejected. The
   default limiter is in-process, which is correct for a single self-hosted
-  instance only. **Multi-instance or serverless deployments must register a
-  shared limiter** (e.g. Upstash/Redis): implement the `ScanRateLimiter`
-  interface from `lib/requestGuard.ts` and register it with
-  `setScanRateLimiter(...)` from `instrumentation.ts` at server startup. If
-  the shared backend fails, the route degrades to the per-instance bucket
-  (bounded, never unlimited). An edge/WAF rate limit in front of the app is
-  still recommended as the first layer.
+  instance only. For multi-instance/serverless hosting, set
+  `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; `instrumentation.ts`
+  automatically installs the concrete shared fixed-window limiter. Configure
+  `RATE_LIMIT_TRUSTED_IP_HEADER` only for a header your edge overwrites or strips.
+  Client identifiers are hashed (HMACed when `RATE_LIMIT_KEY_SALT` is set). If
+  the shared backend fails or times out, the route degrades to the per-instance
+  bucket—bounded, never unlimited. A separate provider-wide pool defaults to 20
+  tickers/minute across every client and request kind; tune it with
+  `PROVIDER_TICKER_BUDGET_PER_MINUTE` for the actual provider plan. The daily
+  snapshot runner honors `Retry-After` when this pool rolls over. An edge/WAF
+  limit remains recommended.
 
 ## Scan history (snapshots)
 
@@ -187,7 +193,9 @@ date — they cannot be backfilled later. To accumulate them automatically:
    set `SNAPSHOT_TICKERS`.
 2. Run `npm run snapshot:daily`. It scans the universe through the real
    `/api/scan` route (starting a temporary `next start` if no server is up,
-   building first if needed) and exits non-zero if nothing was recorded.
+   building first if needed) and exits non-zero if nothing was recorded or any
+   chunk was truncated/failed. The summary distinguishes returned rows from
+   snapshots actually committed.
    First-fresh-per-day dedupe makes repeat runs harmless.
 3. To schedule it on macOS, fill in the two placeholders in
    `scripts/com.fundamental-screener.daily-snapshot.plist` (absolute node 20

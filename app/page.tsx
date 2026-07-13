@@ -17,7 +17,6 @@ import { EVIDENCE_REGISTRY, VERDICT_LABEL } from '@/lib/evidence';
 import { toCsv } from '@/lib/csv';
 import { serializeShare, parseShare } from '@/lib/shareUrl';
 import type { ScanError, ScanRow } from '@/lib/types';
-import type { FearGreedData } from '@/lib/fearGreed';
 
 type Phase = 'idle' | 'loading' | 'done' | 'error';
 
@@ -92,23 +91,16 @@ export default function Page() {
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(false);
   const [filters, setFilters] = useState<FilterCriteria>(EMPTY_FILTERS);
-  const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null);
 
   const scanningRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
-
-  // Fetch market sentiment on mount (non-blocking).
-  useEffect(() => {
-    fetch('/api/feargreed')
-      .then((r) => r.json())
-      .then((d: FearGreedData | null) => { if (d && typeof d.score === 'number') setFearGreed(d); })
-      .catch(() => {});
-  }, []);
 
   // Restore tickers AND filter state from a shared URL on first load (no
   // auto-scan — scanning spends provider quota, so it stays a user action).
   useEffect(() => {
     const shared = parseShare(new URLSearchParams(window.location.search));
+    // URL state is client-only; applying it after hydration avoids an SSR mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (shared.tickers.length > 0) setInput(shared.tickers.join(', '));
     if (hasActiveFilters(shared.filters) || shared.filters.includeUnavailable) setFilters(shared.filters);
   }, []);
@@ -130,7 +122,13 @@ export default function Page() {
   }, [result]);
 
   const displayedRows = useMemo(
-    () => (result ? applyFilters(sortRows(result.rows, sortKey, sortDir, scoreMap), filters, (r) => scoreMap.get(r.ticker)) : []),
+    () => {
+      if (!result) return [];
+      const safeFilters = mixedCurrency(result.rows)
+        ? { ...filters, marketCapMin: null, marketCapMax: null }
+        : filters;
+      return applyFilters(sortRows(result.rows, sortKey, sortDir, scoreMap), safeFilters, (r) => scoreMap.get(r.ticker));
+    },
     [result, sortKey, sortDir, scoreMap, filters]
   );
 
@@ -285,14 +283,6 @@ export default function Page() {
         <strong>Experimental heuristic · methodology v{METHODOLOGY.version}</strong> — informational research aid,
         not a validated return forecast or investment recommendation.
       </p>
-
-      {fearGreed && (
-        <div className={`fear-greed-badge fg-${fearGreed.label.toLowerCase().replace(' ', '-')}`} title="CNN Fear & Greed Index — market sentiment gauge">
-          <span className="fg-label">Market Sentiment</span>
-          <span className="fg-score">{fearGreed.score}</span>
-          <span className="fg-desc">{fearGreed.label}</span>
-        </div>
-      )}
 
       <form className="form" onSubmit={onScan}>
         <label htmlFor="tickers">Tickers</label>
@@ -497,7 +487,7 @@ export default function Page() {
             </table>
 
             <h4>Hard Floors</h4>
-            <p>A stock is forced to <strong>Weak</strong> regardless of its Strength Score when a hard
+            <p>A stock is limited to <strong>Insufficient / flagged</strong> regardless of its Strength Score when a hard
             rule fires: insufficient coverage, Risk Score {METHODOLOGY.riskFloor}+, or a critical
             Earnings Quality/Leverage rule. The Strength Score describes positive signals; it does not
             override risk. (Exception: a <em>benign</em>
@@ -507,14 +497,14 @@ export default function Page() {
             <ul className="tier-list">
               <li><strong>Cyclicals (semis, autos):</strong> P/E compression is neutralized — a low forward P/E off peak earnings is a trap, not durable growth.</li>
               <li><strong>Leverage:</strong> D/E is neutralized for financials (leverage is structural) and when the ratio is buyback-distorted — negative or extremely high (&gt;10) book equity makes it noise; EV/EBITDA carries the real read.</li>
-              <li><strong>Crowding:</strong> a mega-cap ($200B+) trading near its 52-week high is capped at Moderate — already widely owned.</li>
+              <li><strong>Crowding:</strong> a mega-cap ($200B+) trading near its 52-week high is limited to Mixed signals — already widely owned.</li>
               <li><strong>Benign earnings quality:</strong> a −1 Earnings Quality (FCF below earnings yield) does <em>not</em> disqualify when FCF is still solidly positive (≥2%) and revenue is surging (&gt;20%) — that&apos;s a growth/capex drag (receivables build + heavy capex), not a cash-conversion red flag. It still costs Risk points.</li>
             </ul>
 
             <h4>Signal Tiers</h4>
             <ul className="tier-list">
               {METHODOLOGY.tierRules.map((rule) => (
-                <li key={rule.label}><span className={`tier-dot tier-${rule.label.toLowerCase()}`} /> <strong>{rule.label}:</strong> {rule.rule}</li>
+                <li key={rule.key}><span className={`tier-dot tier-${rule.key}`} /> <strong>{rule.label}:</strong> {rule.rule}</li>
               ))}
             </ul>
 

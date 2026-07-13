@@ -45,6 +45,16 @@ export const VERDICT_LABEL: Record<EvidenceVerdict, string> = {
 
 export const EVIDENCE_REGISTRY: EvidenceEntry[] = [
   {
+    id: 'scorecard-v5-returns',
+    claim: 'The 12-criterion scorecard (Strength/Risk, methodology v5) predicts cross-sectional excess returns.',
+    verdict: 'untested',
+    scope:
+      'Version 5 adds fail-closed sanity bounds so implausible provider values cannot influence scoring. This is a data-integrity change, not evidence of predictive validity; no point-in-time return test of v5 exists.',
+    source: 'docs/scoring-changelog.md',
+    asOf: '2026-07-12',
+    scoringVersion: 5,
+  },
+  {
     id: 'scorecard-v4-returns',
     claim: 'The 12-criterion scorecard (Strength/Risk, methodology v4) predicts cross-sectional excess returns.',
     verdict: 'untested',

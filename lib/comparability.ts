@@ -28,7 +28,7 @@ export function mixedCurrency(rows: CurrencyRow[]): boolean {
   const known = distinctCurrencies(rows);
   if (known.length > 1) return true;
   const unknownCount = rows.filter((r) => r.currency == null).length;
-  return unknownCount > 0 && known.length > 0;
+  return unknownCount > 0;
 }
 
 export interface ComparabilityWarning {

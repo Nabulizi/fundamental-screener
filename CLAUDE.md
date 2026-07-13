@@ -75,7 +75,6 @@ and harness location live in `docs/quant-research-plan.md`.
   as the objective "vs ~N days ago" complement to the client "since you last viewed".
 - `lib/circuitBreaker.ts` — per-ticker failure tracking; skips after 3 failures
   for 60 s cooldown.
-- `lib/fearGreed.ts` + `app/api/feargreed/route.ts` — CNN Fear & Greed badge.
 - `lib/{tickers,filters,sort,format,csv,shareUrl,range,freshness}.ts` — pure,
   heavily-tested helpers. UI in `app/page.tsx` + `components/`.
 
@@ -156,7 +155,7 @@ optional.
   interest coverage (`netInterestCoverageTTM` → `ScanRow.interestCoverage`):
   coverage < `WEAK_INTEREST_COVERAGE` (2) → −1 (fatal, disqualifies), else
   neutral — buyback distortion (MCD) stays waived, loss-wiped equity doesn't;
-  a mega-cap ($200B+) near its 52-week high is capped at Moderate.
+  a mega-cap ($200B+) near its 52-week high is limited to Mixed signals.
   **Known consequences (intentional, reviewed):** financials' maximum
   achievable Strength is 11 (five criteria neutralized) so they can never
   tier Strong — a deliberate limited-scorecard stance until a

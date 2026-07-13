@@ -82,6 +82,7 @@ export async function scanTickers(
         // Circuit breaker: skip tickers that have failed too many times recently.
         if (isOpen(ticker)) {
           errors.push({ ticker, code: 'PROVIDER_ERROR', message: 'Skipped — too many recent failures (circuit open).' });
+          telemetry.failures += 1;
           continue;
         }
         const cachedRow = useCache && !refresh ? getCached(ticker) : null;

@@ -31,8 +31,8 @@ function ok(payload: unknown): Response {
 describe('runClientScan', () => {
   it('aggregates rows in input order and reports progress for each ticker', async () => {
     const fetchImpl = vi.fn(async (_url, init) => {
-      const body = JSON.parse((init as RequestInit).body as string) as { input: string };
-      return ok({ rows: [makeRow(body.input)], errors: [] });
+      const body = JSON.parse((init as RequestInit).body as string) as { tickers: string[] };
+      return ok({ rows: body.tickers.map((ticker) => makeRow(ticker)), errors: [] });
     });
     const progress: number[] = [];
     const out = await runClientScan(['AAPL', 'MSFT', 'KO'], {
@@ -41,14 +41,17 @@ describe('runClientScan', () => {
     });
     expect(out.rows.map((r) => r.ticker)).toEqual(['AAPL', 'MSFT', 'KO']);
     expect(progress.at(-1)).toBe(3);
-    expect(progress).toHaveLength(3);
+    expect(progress).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('preserves successful rows when one ticker errors (partial results)', async () => {
     const fetchImpl = vi.fn(async (_url, init) => {
-      const body = JSON.parse((init as RequestInit).body as string) as { input: string };
-      if (body.input === 'BAD') return ok({ rows: [], errors: [{ ticker: 'BAD', code: 'NOT_FOUND', message: 'no data' }] });
-      return ok({ rows: [makeRow(body.input)], errors: [] });
+      const body = JSON.parse((init as RequestInit).body as string) as { tickers: string[] };
+      return ok({
+        rows: body.tickers.filter((ticker) => ticker !== 'BAD').map((ticker) => makeRow(ticker)),
+        errors: body.tickers.includes('BAD') ? [{ ticker: 'BAD', code: 'NOT_FOUND', message: 'no data' }] : [],
+      });
     });
     const out = await runClientScan(['AAPL', 'BAD', 'KO'], { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(out.rows.map((r) => r.ticker)).toEqual(['AAPL', 'KO']);
@@ -65,9 +68,9 @@ describe('runClientScan', () => {
   it('forwards the refresh flag to the API', async () => {
     const seen: boolean[] = [];
     const fetchImpl = vi.fn(async (_url, init) => {
-      const body = JSON.parse((init as RequestInit).body as string) as { input: string; refresh: boolean };
+      const body = JSON.parse((init as RequestInit).body as string) as { tickers: string[]; refresh: boolean };
       seen.push(body.refresh);
-      return ok({ rows: [makeRow(body.input)], errors: [] });
+      return ok({ rows: body.tickers.map((ticker) => makeRow(ticker)), errors: [] });
     });
     await runClientScan(['AAPL'], { fetchImpl: fetchImpl as unknown as typeof fetch, refresh: true });
     expect(seen).toEqual([true]);
@@ -75,9 +78,11 @@ describe('runClientScan', () => {
 
   it('streams rows and errors progressively via onRow/onError', async () => {
     const fetchImpl = vi.fn(async (_url, init) => {
-      const body = JSON.parse((init as RequestInit).body as string) as { input: string };
-      if (body.input === 'BAD') return ok({ rows: [], errors: [{ ticker: 'BAD', code: 'NOT_FOUND', message: 'no data' }] });
-      return ok({ rows: [makeRow(body.input)], errors: [] });
+      const body = JSON.parse((init as RequestInit).body as string) as { tickers: string[] };
+      return ok({
+        rows: body.tickers.filter((ticker) => ticker !== 'BAD').map((ticker) => makeRow(ticker)),
+        errors: body.tickers.includes('BAD') ? [{ ticker: 'BAD', code: 'NOT_FOUND', message: 'no data' }] : [],
+      });
     });
     const streamed: string[] = [];
     const failed: string[] = [];
@@ -94,9 +99,10 @@ describe('runClientScan', () => {
 
   it('cancellation keeps completed rows and reports aborted', async () => {
     const controller = new AbortController();
+    const progress: number[] = [];
     const fetchImpl = vi.fn(async (_url, init) => {
-      const body = JSON.parse((init as RequestInit).body as string) as { input: string };
-      if (body.input === 'AAPL') return ok({ rows: [makeRow('AAPL')], errors: [] });
+      const body = JSON.parse((init as RequestInit).body as string) as { tickers: string[] };
+      if (body.tickers[0] === 'AAPL') return ok({ rows: [makeRow('AAPL')], errors: [] });
       // Abort mid-scan: the remaining ticker rejects like a real aborted fetch.
       controller.abort();
       throw new DOMException('The user aborted a request.', 'AbortError');
@@ -104,10 +110,21 @@ describe('runClientScan', () => {
     const out = await runClientScan(['AAPL', 'MSFT', 'KO'], {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       concurrency: 1,
-      signal: controller.signal
+      batchSize: 1,
+      signal: controller.signal,
+      onProgress: (p) => progress.push(p.completed),
     });
     expect(out.aborted).toBe(true);
     expect(out.rows.map((r) => r.ticker)).toEqual(['AAPL']); // partials preserved
     expect(fetchImpl).toHaveBeenCalledTimes(2); // KO was never started
+    expect(progress).toEqual([1]); // the aborted request is not reported as completed
+  });
+
+  it('maps HTTP 429 to RATE_LIMITED for every ticker and preserves Retry-After', async () => {
+    const out = await runClientScan(['AAPL', 'MSFT'], {
+      fetchImpl: vi.fn(async () => new Response('', { status: 429, headers: { 'Retry-After': '17' } })) as unknown as typeof fetch,
+    });
+    expect(out.errors.map((e) => e.code)).toEqual(['RATE_LIMITED', 'RATE_LIMITED']);
+    expect(out.errors[0].message).toContain('17s');
   });
 });

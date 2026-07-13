@@ -1,6 +1,6 @@
 import type { ScanRow } from './types';
 import type { CrossCheck } from './crossCheck';
-import { sanitizeRevenueGrowth, sanitizeQuarterlyRevGrowth, EXTREME_DE_RATIO } from './scoring';
+import { sanitizeScoreRow, EXTREME_DE_RATIO } from './scoring';
 
 /**
  * Field-level provenance for the metrics the UI displays (P1-A/B/C).
@@ -23,7 +23,9 @@ import { sanitizeRevenueGrowth, sanitizeQuarterlyRevGrowth, EXTREME_DE_RATIO } f
 export type MetricKey =
   | 'marketCap' | 'currentPrice' | 'week52Range' | 'ytdReturn'
   | 'trailingPE' | 'forwardPE' | 'dividendYieldPercent' | 'fcfYieldPercent'
-  | 'revenueGrowthTTM' | 'debtToEquity' | 'evToEbitda';
+  | 'revenueGrowthTTM' | 'revenueGrowthQuarterly'
+  | 'debtToEquity' | 'interestCoverage' | 'evToEbitda'
+  | 'operatingMarginTTM' | 'operatingMargin5Y' | 'rangePosition';
 
 export type MetricPeriod = 'instant' | 'quarter' | 'ttm' | 'annual' | 'forward' | 'trailing-52w';
 
@@ -106,15 +108,40 @@ export const FIELD_SEMANTICS: Record<MetricKey, FieldSemantics> = {
     sourceField: { finnhub: 'metric.revenueGrowthTTMYoy', alphavantage: null },
     value: (r) => r.revenueGrowthTTM
   },
+  revenueGrowthQuarterly: {
+    label: 'Revenue growth (latest quarter YoY)', period: 'quarter', unit: 'percent', reportedOrComputed: 'provider-computed',
+    sourceField: { finnhub: 'metric.revenueGrowthQuarterlyYoy', alphavantage: null },
+    value: (r) => r.revenueGrowthQuarterly ?? null
+  },
   debtToEquity: {
     label: 'Debt / equity', period: 'quarter', unit: 'ratio', reportedOrComputed: 'provider-computed',
     sourceField: { finnhub: 'metric.totalDebt/totalEquityQuarterly', alphavantage: null },
     value: (r) => r.debtToEquity
   },
+  interestCoverage: {
+    label: 'Interest coverage', period: 'ttm', unit: 'ratio', reportedOrComputed: 'provider-computed',
+    sourceField: { finnhub: 'metric.netInterestCoverageTTM', alphavantage: null },
+    value: (r) => r.interestCoverage ?? null
+  },
   evToEbitda: {
     label: 'EV / EBITDA', period: 'ttm', unit: 'ratio', reportedOrComputed: 'provider-computed',
     sourceField: { finnhub: 'metric.evEbitdaTTM', alphavantage: null },
     value: (r) => r.evToEbitda
+  },
+  operatingMarginTTM: {
+    label: 'Operating margin (TTM)', period: 'ttm', unit: 'percent', reportedOrComputed: 'provider-computed',
+    sourceField: { finnhub: 'metric.operatingMarginTTM', alphavantage: 'OVERVIEW.OperatingMarginTTM' },
+    value: (r) => r.operatingMarginTTM ?? null
+  },
+  operatingMargin5Y: {
+    label: 'Operating margin (5Y average)', period: 'annual', unit: 'percent', reportedOrComputed: 'provider-computed',
+    sourceField: { finnhub: 'metric.operatingMargin5Y', alphavantage: null },
+    value: (r) => r.operatingMargin5Y ?? null
+  },
+  rangePosition: {
+    label: '52-week range position', period: 'trailing-52w', unit: 'percent', reportedOrComputed: 'app-computed',
+    sourceField: { finnhub: 'quote.c + metric.52WeekLow/High', alphavantage: 'GLOBAL_QUOTE.05.price + OVERVIEW.52WeekLow/High' },
+    value: (r) => r.rangePosition == null ? null : r.rangePosition * 100
   }
 };
 
@@ -135,28 +162,16 @@ export function plausibilityFlags(key: MetricKey, row: ScanRow): QualityFlag[] {
   const flags: QualityFlag[] = [];
   const v = FIELD_SEMANTICS[key].value(row);
   if (v == null) return ['missing'];
+  const sanitizedValue = FIELD_SEMANTICS[key].value(sanitizeScoreRow(row));
+  if (sanitizedValue == null && v != null && key !== 'debtToEquity') flags.push('implausible');
   switch (key) {
-    case 'revenueGrowthTTM':
-      if (sanitizeRevenueGrowth(row).suspect || sanitizeQuarterlyRevGrowth(row).suspect) flags.push('implausible');
-      break;
     case 'debtToEquity':
       // Negative or extreme book equity makes the ratio noise; scoring
       // arbitrates via interest coverage but the value itself is suspect.
       if (v < 0 || v > EXTREME_DE_RATIO) flags.push('implausible');
       break;
-    case 'dividendYieldPercent':
-      if (v < 0 || v > 25) flags.push('implausible');
-      break;
-    case 'fcfYieldPercent':
-      if (Math.abs(v) > 100) flags.push('implausible');
-      break;
-    case 'trailingPE':
-    case 'forwardPE':
-      if (v > 1_000) flags.push('implausible');
-      break;
-    case 'marketCap':
-    case 'currentPrice':
-      if (v <= 0) flags.push('implausible');
+    case 'week52Range':
+      if (row.week52Low == null || row.week52High == null || row.week52Low <= 0 || row.week52High < row.week52Low) flags.push('implausible');
       break;
   }
   return flags;
@@ -182,7 +197,7 @@ export function observeRow(row: ScanRow, crossCheck?: CrossCheck | null): Metric
       label: s.label,
       value,
       source: row.source ?? null,
-      sourceField: row.source ? s.sourceField[row.source] : s.sourceField.finnhub,
+      sourceField: row.source ? s.sourceField[row.source] : null,
       retrievedAt: row.retrievedAt,
       effectiveAt: null,
       period: s.period,

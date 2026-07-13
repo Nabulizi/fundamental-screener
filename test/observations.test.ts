@@ -29,7 +29,7 @@ function makeRow(overrides: Partial<ScanRow> = {}): ScanRow {
 
 describe('field semantics', () => {
   it('covers every visible metric with period, unit, and provider source field', () => {
-    expect(METRIC_KEYS.length).toBe(11);
+    expect(METRIC_KEYS.length).toBe(16);
     for (const key of METRIC_KEYS) {
       const s = FIELD_SEMANTICS[key];
       expect(s.label.length).toBeGreaterThan(0);

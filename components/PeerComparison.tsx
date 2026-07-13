@@ -138,7 +138,7 @@ function Row({ row }: { row: PeerRow }) {
   return (
     <tr className={row.selected ? 'peers-self-row' : undefined}>
       {label}
-      <td>{formatMarketCap(c.marketCap, null)}</td>
+      <td>{formatMarketCap(c.marketCap, c.currency)}</td>
       <td>{formatReturn(c.revenueGrowthTTM)}</td>
       <td>{formatPercent(c.operatingMarginTTM)}</td>
       <td>{formatRatio(c.evToEbitda)}</td>

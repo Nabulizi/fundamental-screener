@@ -3,7 +3,7 @@ import { clampFraction } from './range';
 import { formatPercent, formatReturn, formatPe, formatRatio } from './format';
 
 // ---------------------------------------------------------------------------
-// Master Scoring Framework (v4) — 12 criteria, weighted by significance tier,
+// Master Scoring Framework (v5) — 12 criteria, weighted by significance tier,
 // split into two independent scores instead of one signed total.
 //
 //   Tier 1 (×3) — Survival & Quality:  Earnings Quality, Leverage
@@ -157,7 +157,7 @@ export const RISK_FLOOR = 8;
  * methodology eras in the longitudinal record so v3 scores are never compared
  * naively against scores produced by different rules.
  */
-export const SCORING_VERSION = 4;
+export const SCORING_VERSION = 5;
 
 /** Mega-cap cutoff (raw currency units) for the crowding overlay. */
 export const MEGA_CAP_THRESHOLD = 200_000_000_000;
@@ -206,7 +206,7 @@ function sanitizeGrowthValue(raw: number | null | undefined, industry: string | 
   const v = raw != null && Number.isFinite(raw) ? raw : null;
   if (v == null) return { value: null, suspect: false };
   const bound = isFinancialIndustry(industry) ? SUSPECT_REV_GROWTH_FINANCIAL : SUSPECT_REV_GROWTH_GENERAL;
-  return v > bound ? { value: null, suspect: true } : { value: v, suspect: false };
+  return v < -100 || v > bound ? { value: null, suspect: true } : { value: v, suspect: false };
 }
 
 export function sanitizeRevenueGrowth(row: ScanRow): { value: number | null; suspect: boolean } {
@@ -216,6 +216,34 @@ export function sanitizeRevenueGrowth(row: ScanRow): { value: number | null; sus
 /** Quarterly YoY growth under the same sanity bounds as the TTM figure. */
 export function sanitizeQuarterlyRevGrowth(row: ScanRow): { value: number | null; suspect: boolean } {
   return sanitizeGrowthValue(row.revenueGrowthQuarterly, row.industry);
+}
+
+const bounded = (value: number | null | undefined, min: number, max: number): number | null =>
+  value != null && Number.isFinite(value) && value >= min && value <= max ? value : null;
+
+/**
+ * Single scoring input boundary. Provider values outside defensible sanity
+ * ranges become missing before any criterion, coverage rule, or overlay sees
+ * them. The raw row remains available for display/provenance and verification.
+ */
+export function sanitizeScoreRow(row: ScanRow): ScanRow {
+  return {
+    ...row,
+    marketCap: bounded(row.marketCap, Number.MIN_VALUE, Number.MAX_VALUE),
+    currentPrice: bounded(row.currentPrice, Number.MIN_VALUE, Number.MAX_VALUE),
+    trailingPE: bounded(row.trailingPE, Number.MIN_VALUE, 1_000),
+    forwardPE: bounded(row.forwardPE, Number.MIN_VALUE, 1_000),
+    dividendYieldPercent: bounded(row.dividendYieldPercent, 0, 25),
+    ytdReturn: bounded(row.ytdReturn, -100, 1_000),
+    fcfYieldPercent: bounded(row.fcfYieldPercent, -100, 100),
+    revenueGrowthTTM: sanitizeRevenueGrowth(row).value,
+    revenueGrowthQuarterly: sanitizeQuarterlyRevGrowth(row).value,
+    evToEbitda: bounded(row.evToEbitda, Number.MIN_VALUE, 1_000),
+    interestCoverage: bounded(row.interestCoverage, -10_000, 10_000),
+    operatingMarginTTM: bounded(row.operatingMarginTTM, -200, 100),
+    operatingMargin5Y: bounded(row.operatingMargin5Y, -200, 100),
+    rangePosition: bounded(row.rangePosition, 0, 1),
+  };
 }
 
 /**
@@ -425,7 +453,8 @@ function n(v: number | null | undefined): number | null {
   return v != null && Number.isFinite(v) ? v : null;
 }
 
-export function computeBreakdown(row: ScanRow): ScoreBreakdown {
+export function computeBreakdown(input: ScanRow): ScoreBreakdown {
+  const row = sanitizeScoreRow(input);
   const pe = n(row.trailingPE);
   const fwdPe = n(row.forwardPE);
   const fcf = n(row.fcfYieldPercent);
@@ -770,7 +799,8 @@ export function tierFor(strengthScore: number, riskScore: number, flags: RowFlag
   return 'weak';
 }
 
-export function scoreRow(row: ScanRow): ScoredRow {
+export function scoreRow(rawRow: ScanRow): ScoredRow {
+  const row = sanitizeScoreRow(rawRow);
   const breakdown = computeBreakdown(row);
   const { strength, risk } = computeScores(breakdown);
   const coverage = computeCoverage(row);
@@ -779,7 +809,7 @@ export function scoreRow(row: ScanRow): ScoredRow {
     cyclical: isCyclicalIndustry(row.industry),
     crowding: isCrowded(row),
     benignEarningsQuality: breakdown.earningsQuality === -1 && isBenignEarningsQuality(row),
-    suspectRevenueGrowth: sanitizeRevenueGrowth(row).suspect || sanitizeQuarterlyRevGrowth(row).suspect,
+    suspectRevenueGrowth: sanitizeRevenueGrowth(rawRow).suspect || sanitizeQuarterlyRevGrowth(rawRow).suspect,
     insufficientData: hasInsufficientData(row, coverage),
     valueTrap: isValueTrap(row),
     peakCycle: isPeakCycle(row),
@@ -790,7 +820,7 @@ export function scoreRow(row: ScanRow): ScoredRow {
       && !isBenignEarningsQuality(row),
   };
   return {
-    row,
+    row: rawRow,
     breakdown,
     strengthScore: strength,
     riskScore: risk,

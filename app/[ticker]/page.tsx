@@ -131,6 +131,8 @@ export default async function TickerPage({ params }: { params: Promise<{ ticker:
   const store = getStore();
   await recordSnapshots([row], { store });
   const snapshots = store ? await store.getSnapshots(row.ticker, 400).catch(() => []) : [];
+  // A server-rendered age calculation intentionally snapshots wall-clock time.
+  // eslint-disable-next-line react-hooks/purity
   const snapshotHistory = buildSnapshotHistory(snapshots, seenCurrent, Date.now());
 
   const metrics: [string, string][] = [

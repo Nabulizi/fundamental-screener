@@ -1174,9 +1174,35 @@ describe('SCORING_VERSION', () => {
     expect(Number.isInteger(SCORING_VERSION)).toBe(true);
     expect(SCORING_VERSION).toBeGreaterThanOrEqual(3);
   });
-  // Exact-pin: Phase 5 opened a new scoring era. Bump this alongside the constant
-  // whenever criteria/neutralization change — it catches an accidental no-bump.
-  it('is exactly 4 (the Phase 5 curated-financial-classifier era)', () => {
-    expect(SCORING_VERSION).toBe(4);
+  // Exact-pin: fail-closed data-quality sanitation opened a new scoring era.
+  it('is exactly 5 (implausible provider inputs cannot influence scores)', () => {
+    expect(SCORING_VERSION).toBe(5);
+  });
+});
+
+describe('fail-closed score input sanitation (v5)', () => {
+  it('neutralizes implausible yields and multiples before scoring', () => {
+    const r = blankRow({
+      trailingPE: 2_000,
+      forwardPE: 1_500,
+      fcfYieldPercent: 250,
+      dividendYieldPercent: 40,
+      evToEbitda: 2_000,
+    });
+    const breakdown = computeBreakdown(r);
+    expect(breakdown.earningsQuality).toBe(0);
+    expect(breakdown.peCompression).toBe(0);
+    expect(breakdown.fcfYieldLevel).toBe(0);
+    expect(breakdown.dividendYield).toBe(0);
+    expect(breakdown.valuation).toBe(0);
+    expect(scoreRow(r).coverage.covered).toBe(0);
+  });
+
+  it('neutralizes economically impossible revenue declines', () => {
+    const r = blankRow({ revenueGrowthTTM: -150, revenueGrowthQuarterly: -200 });
+    const scored = scoreRow(r);
+    expect(scored.breakdown.revenueGrowth).toBe(0);
+    expect(scored.breakdown.revenueAcceleration).toBe(0);
+    expect(scored.flags.suspectRevenueGrowth).toBe(true);
   });
 });

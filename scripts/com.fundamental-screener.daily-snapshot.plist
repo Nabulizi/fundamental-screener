@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   launchd template for the daily snapshot scan (see README "Scan history").
-  Replace __NODE__ with an absolute node 20 path (e.g. ~/.nvm/versions/node/v20.18.1/bin/node)
+  Replace __NODE__ with an absolute node 20 path (e.g. ~/.nvm/versions/node/v20.19.0/bin/node)
   and __REPO__ with the absolute repo path, then:
 
     cp scripts/com.fundamental-screener.daily-snapshot.plist ~/Library/LaunchAgents/

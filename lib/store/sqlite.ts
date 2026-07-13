@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { readFileSync, mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import BetterSqlite3 from 'better-sqlite3';
 import type { Store, SnapshotRecord } from './index';
 import type { SignalTier } from '../scoring';
 
@@ -36,14 +36,15 @@ function fromDb(r: SnapshotRow): SnapshotRecord {
 }
 
 export function createSqliteStore(dbPath?: string, jsonlPath?: string): Store {
-  const require = createRequire(import.meta.url);
-  const Database = require('better-sqlite3') as new (p: string) => Db;
+  const Database = BetterSqlite3 as unknown as new (p: string) => Db;
   const dbFile = dbPath ?? path.join(process.cwd(), 'data', 'screener.db');
   // data/ is gitignored, so a fresh clone has no parent dir → better-sqlite3
   // would throw "directory does not exist" and durable snapshots would stay
   // disabled for the whole process. Create it first.
-  mkdirSync(path.dirname(dbFile), { recursive: true });
-  const db = new Database(dbFile);
+  // Runtime data lives outside the deployment bundle; do not ask Turbopack to
+  // trace the dynamic local path (which otherwise expands to the project root).
+  mkdirSync(/* turbopackIgnore: true */ path.dirname(dbFile), { recursive: true });
+  const db = new Database(/* turbopackIgnore: true */ dbFile);
   db.pragma('journal_mode = WAL');
   db.exec(`CREATE TABLE IF NOT EXISTS snapshots (
     ticker TEXT NOT NULL, day TEXT NOT NULL, scoring_version INTEGER NOT NULL,
@@ -85,7 +86,10 @@ function importJsonlOnce(db: Db, put: (s: SnapshotRecord) => void, dbPath?: stri
   const done = db.prepare('SELECT value FROM meta WHERE key = ?').get('jsonl_imported');
   if (done) return;
   try {
-    const raw = readFileSync(jsonlPath ?? path.join(process.cwd(), 'data', 'snapshots.jsonl'), 'utf8');
+    const raw = readFileSync(
+      /* turbopackIgnore: true */ jsonlPath ?? path.join(process.cwd(), 'data', 'snapshots.jsonl'),
+      'utf8'
+    );
     const records: SnapshotRecord[] = [];
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue;

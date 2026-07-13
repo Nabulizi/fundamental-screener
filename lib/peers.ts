@@ -9,6 +9,7 @@ import type { ScanRow } from './types';
 
 export interface PeerCell {
   marketCap: number | null;
+  currency: string | null;
   revenueGrowthTTM: number | null;
   operatingMarginTTM: number | null;
   evToEbitda: number | null;
@@ -58,6 +59,7 @@ function cellFor(row: ScanRow): PeerCell {
   const nm = isBalanceSheetFinancial(row.ticker, row.industry);
   return {
     marketCap: row.marketCap,
+    currency: row.currency,
     revenueGrowthTTM: row.revenueGrowthTTM,
     operatingMarginTTM: row.operatingMarginTTM ?? null,
     evToEbitda: row.evToEbitda,

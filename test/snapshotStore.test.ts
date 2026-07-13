@@ -109,6 +109,21 @@ describe('recordSnapshots — resilience', () => {
     warn.mockRestore();
   });
 
+  it('commits JSONL once even when the secondary durable store fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cache: SnapshotCache = new Map();
+    const store = {
+      putSnapshot: vi.fn(async () => { throw new Error('sqlite unavailable'); }),
+      getSnapshots: vi.fn(async () => []),
+      close: vi.fn(),
+    };
+    expect(await recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache, store })).toBe(1);
+    expect(await recordSnapshots([freshRow('AAPL')], { filePath: file(), now: day1, cache, store })).toBe(0);
+    expect(await lines()).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('durable-store'));
+    warn.mockRestore();
+  });
+
   it('serializes concurrent calls — no duplicate (date, ticker) lines', async () => {
     const cache: SnapshotCache = new Map();
     const slowRead: typeof readFile = (async (...args: Parameters<typeof readFile>) => {

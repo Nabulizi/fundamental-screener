@@ -15,6 +15,7 @@ describe('formatMarketCap', () => {
 
   it('respects currency symbol', () => {
     expect(formatMarketCap(1_000_000_000, 'EUR')).toBe('€1.00B');
+    expect(formatMarketCap(1_000_000_000, null)).toBe('¤1.00B');
   });
 });
 
