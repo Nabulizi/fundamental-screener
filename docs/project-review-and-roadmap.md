@@ -451,11 +451,13 @@ Effort is an estimate for one experienced engineer with the existing test suite.
 
 | Task | Work | Effort | Acceptance |
 |---|---|---:|---|
-| P3-A | Terminal-value contribution + two-way sensitivity | 2d | Dominant-terminal cases are obvious; assumptions are auditable. |
+| P3-A | Terminal-value contribution + two-way sensitivity | 2d | **Done (July 12, 2026):** the scenario panel shows terminal value as a % of the Base scenario's present value (warning at ≥ 75%, `TERMINAL_DOMINANCE_THRESHOLD`) and a collapsible cost-of-equity (±2 pp) × terminal-growth (±1 pp) sensitivity table (`sensitivityGrid`/`terminalContribution` in `lib/dcf.ts`; spread-violating cells render "n.m."). Deterministic, no probabilities. Tests in `test/dcf.test.ts`. |
 | P3-B | Share-count freshness and total/per-share basis repair | 1–2d | No stale annual weighted-average shares presented as current without warning. |
 | P3-C | TTM/report-derived FCF reconciliation | 2–3d | Basis differences are visible and flagged. |
 | P3-D | Peer comparability rules and observation counts | 2–3d | Mixed currency/model/period comparisons warn or block. |
 | P3-E | Optional revenue→margin→FCF operating bridge | 3–5d | Simple and bridge models are distinct, versioned, and unit tested. |
+
+**Snapshot accumulation (July 12, 2026):** the longitudinal record P4 depends on now accumulates automatically — `npm run snapshot:daily` (`scripts/daily-snapshot.mjs`) scans a configured universe (`data/universe.txt` or `SNAPSHOT_TICKERS`) through the real `/api/scan` route, starting a temporary production server when none is running; a launchd template (`scripts/com.fundamental-screener.daily-snapshot.plist`, weekdays 16:30 local) schedules it on macOS. Snapshots are the only restatement-free record of what the app knew each day and cannot be backfilled, so this should be installed on any machine expected to feed a future validation run. Verified live end-to-end (6-ticker universe → 6 rows recorded, rerun deduped by the first-fresh-per-day rule).
 
 ### Phase 4 — Scientific validation (multi-month, separate research repository)
 

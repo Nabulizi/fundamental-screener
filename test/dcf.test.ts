@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { intrinsicDcf, impliedGrowth, computeScenarios, isInvertedRange, scenarioAssumptionsValid, scenarioInputsValid, marketImpliedGrowthPct, seedScenarioGrowths } from '@/lib/dcf';
+import { intrinsicDcf, impliedGrowth, terminalContribution, sensitivityGrid, computeScenarios, isInvertedRange, scenarioAssumptionsValid, scenarioInputsValid, marketImpliedGrowthPct, seedScenarioGrowths } from '@/lib/dcf';
 
 describe('intrinsicDcf', () => {
   it('matches a hand-computed two-stage DCF', () => {
@@ -147,5 +147,54 @@ describe('marketImpliedGrowthPct / seedScenarioGrowths (Phase 4 anchoring)', () 
       expect(() => { out = marketImpliedGrowthPct(4.7e9, 1.5e12, { costOfEquity: 0.11, terminalGrowth: 0.03, years }); }).not.toThrow();
       expect(out).toEqual({ pct: null, outOfRange: false });
     }
+  });
+});
+
+describe('terminal contribution (P3-A)', () => {
+  it('is pvTerminal over total present value, flagged when dominant', () => {
+    expect(terminalContribution({ pvExplicit: 25, pvTerminal: 75 })).toEqual({ fraction: 0.75, dominant: true });
+    expect(terminalContribution({ pvExplicit: 50, pvTerminal: 50 })).toEqual({ fraction: 0.5, dominant: false });
+    expect(terminalContribution({ pvExplicit: 0, pvTerminal: 0 })).toEqual({ fraction: 0, dominant: false });
+  });
+
+  it('matches intrinsicDcf output on a real case', () => {
+    const r = intrinsicDcf({ fcf0: 100, discountRate: 0.11, growth: 0.08, terminalGrowth: 0.03 });
+    const tc = terminalContribution(r);
+    expect(tc.fraction).toBeCloseTo(r.pvTerminal / r.enterpriseValue, 12);
+  });
+});
+
+describe('sensitivity grid (P3-A)', () => {
+  it('centers on the current assumptions and matches intrinsicDcf there', () => {
+    const g = sensitivityGrid(100, 0.08, 10, 11, 3);
+    expect(g.coePcts).toEqual([9, 10, 11, 12, 13]);
+    expect(g.terminalPcts).toEqual([2, 2.5, 3, 3.5, 4]);
+    const center = g.values[g.center.terminalIdx][g.center.coeIdx];
+    expect(center).toBeCloseTo(
+      intrinsicDcf({ fcf0: 100, growth: 0.08, discountRate: 0.11, terminalGrowth: 0.03, years: 10 }).equityValue,
+      6
+    );
+  });
+
+  it('value falls as cost of equity rises and rises with terminal growth', () => {
+    const g = sensitivityGrid(100, 0.08, 10, 11, 3);
+    const row = g.values[g.center.terminalIdx] as number[];
+    for (let i = 1; i < row.length; i++) expect(row[i]).toBeLessThan(row[i - 1]);
+    const col = g.values.map((r) => r[g.center.coeIdx]) as number[];
+    for (let i = 1; i < col.length; i++) expect(col[i]).toBeGreaterThan(col[i - 1]);
+  });
+
+  it('nulls cells where terminal growth crowds the cost of equity', () => {
+    const g = sensitivityGrid(100, 0.08, 10, 5, 6);
+    // At CoE 5% every terminal step ≥ 4% violates the 100 bps spread.
+    expect(g.values[g.terminalPcts.indexOf(6)][g.coePcts.indexOf(5)]).toBeNull();
+    expect(g.values[g.terminalPcts.indexOf(5)][g.coePcts.indexOf(7)]).not.toBeNull();
+  });
+
+  it('clamps and dedupes steps at the editable bounds', () => {
+    const g = sensitivityGrid(100, 0.08, 10, 5, 0);
+    expect(g.coePcts).toEqual([5, 6, 7]);       // 3 and 4 clamp to 5
+    expect(g.terminalPcts).toEqual([0, 0.5, 1]); // −1 and −0.5 clamp to 0
+    expect(g.center).toEqual({ coeIdx: 0, terminalIdx: 0 });
   });
 });

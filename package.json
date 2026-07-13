@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "probe": "node scripts/probe.mjs",
     "export:pit": "node scripts/export-pit-fundamentals.mjs",
-    "snapshots": "node scripts/snapshots-summary.mjs"
+    "snapshots": "node scripts/snapshots-summary.mjs",
+    "snapshot:daily": "node scripts/daily-snapshot.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

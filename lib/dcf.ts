@@ -232,6 +232,71 @@ export function isInvertedRange(results: ScenarioResult[]): boolean {
   return false;
 }
 
+// --- Terminal-value disclosure + two-way sensitivity (P3-A) -----------------
+// Deterministic transparency about where the DCF's value comes from and how
+// fragile it is to the two assumptions users tune least: cost of equity and
+// terminal growth. No probabilities, no verdicts.
+
+/** Above this share of present value coming from the terminal stub, the output
+ *  is mostly perpetuity assumption, not the explicit forecast — worth a warning. */
+export const TERMINAL_DOMINANCE_THRESHOLD = 0.75;
+
+export interface TerminalContribution {
+  /** pvTerminal / (pvExplicit + pvTerminal), 0..1. */
+  fraction: number;
+  dominant: boolean;
+}
+
+export function terminalContribution(r: Pick<DcfResult, 'pvExplicit' | 'pvTerminal'>): TerminalContribution {
+  const total = r.pvExplicit + r.pvTerminal;
+  const fraction = total > 0 ? r.pvTerminal / total : 0;
+  return { fraction, dominant: fraction >= TERMINAL_DOMINANCE_THRESHOLD };
+}
+
+export interface SensitivityGrid {
+  /** Column headers: cost of equity, percent. */
+  coePcts: number[];
+  /** Row headers: terminal growth, percent. */
+  terminalPcts: number[];
+  /** values[terminalIdx][coeIdx] = equity value; null where the pair violates
+   *  the ≥100 bps terminal spread (Gordon growth would explode). */
+  values: (number | null)[][];
+  /** Index of the caller's current assumptions within the headers. */
+  center: { coeIdx: number; terminalIdx: number };
+}
+
+const uniqueSteps = (center: number, offsets: number[], min: number, max: number): number[] =>
+  [...new Set(offsets.map((o) => Math.min(max, Math.max(min, center + o))))];
+
+/**
+ * Two-way sensitivity of the DCF equity value to cost of equity (±2 pp) and
+ * terminal growth (±1 pp), holding the FCF base, growth path, and horizon
+ * fixed. Steps are clamped to the editable bounds and deduplicated.
+ */
+export function sensitivityGrid(
+  fcf0: number,
+  growth: number,
+  years: number,
+  coePct: number,
+  terminalPct: number
+): SensitivityGrid {
+  const coePcts = uniqueSteps(coePct, [-2, -1, 0, 1, 2], SCENARIO_BOUNDS.costOfEquity.min, SCENARIO_BOUNDS.costOfEquity.max);
+  const terminalPcts = uniqueSteps(terminalPct, [-1, -0.5, 0, 0.5, 1], SCENARIO_BOUNDS.terminalGrowth.min, SCENARIO_BOUNDS.terminalGrowth.max);
+  const values = terminalPcts.map((tg) =>
+    coePcts.map((coe) =>
+      tg <= coe - 1
+        ? intrinsicDcf({ fcf0, growth, discountRate: coe / 100, terminalGrowth: tg / 100, years }).equityValue
+        : null
+    )
+  );
+  return {
+    coePcts,
+    terminalPcts,
+    values,
+    center: { coeIdx: coePcts.indexOf(coePct), terminalIdx: terminalPcts.indexOf(terminalPct) }
+  };
+}
+
 /**
  * @throws if discountRate <= terminalGrowth (Gordon growth diverges) or years < 1.
  */

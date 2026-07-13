@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd template for the daily snapshot scan (see README "Scan history").
+  Replace __NODE__ with an absolute node 20 path (e.g. ~/.nvm/versions/node/v20.18.1/bin/node)
+  and __REPO__ with the absolute repo path, then:
+
+    cp scripts/com.fundamental-screener.daily-snapshot.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.fundamental-screener.daily-snapshot.plist
+
+  Runs weekdays at 16:30 local (after US close). RunAtLoad is off, and missed
+  runs while the machine is asleep fire once on wake (launchd default).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fundamental-screener.daily-snapshot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__REPO__/scripts/daily-snapshot.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>StandardOutPath</key>
+  <string>/tmp/fundamental-screener-snapshot.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/fundamental-screener-snapshot.log</string>
+</dict>
+</plist>
