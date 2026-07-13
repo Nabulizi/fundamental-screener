@@ -6,9 +6,8 @@ import WatchlistManager from '@/components/WatchlistManager';
 import { parseTickers, DEFAULT_MAX_TICKERS } from '@/lib/tickers';
 
 const MAX_TICKERS = Number(process.env.NEXT_PUBLIC_MAX_TICKERS) || DEFAULT_MAX_TICKERS;
-// Filtering UI was removed; EMPTY_FILTERS is still passed to share-URL encoding
-// so links keep round-tripping (and old links with filter params still parse).
-import { EMPTY_FILTERS } from '@/lib/filters';
+import { EMPTY_FILTERS, applyFilters, hasActiveFilters, type FilterCriteria } from '@/lib/filters';
+import FilterBar from '@/components/FilterBar';
 import { runClientScan, type ScanProgress } from '@/lib/clientScan';
 import { sortRows, type SortDir, type SortKey } from '@/lib/sort';
 import { distinctCurrencies, mixedCurrency } from '@/lib/comparability';
@@ -90,6 +89,8 @@ export default function Page() {
   const [sortKey, setSortKey] = useState<SortKey>('strength');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [shareMsg, setShareMsg] = useState<string | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+  const [filters, setFilters] = useState<FilterCriteria>(EMPTY_FILTERS);
   const [fearGreed, setFearGreed] = useState<FearGreedData | null>(null);
 
   const scanningRef = useRef(false);
@@ -103,11 +104,12 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  // Restore tickers from a shared URL on first load (no auto-scan). Any filter
-  // params in an older link are ignored — the filtering UI no longer exists.
+  // Restore tickers AND filter state from a shared URL on first load (no
+  // auto-scan — scanning spends provider quota, so it stays a user action).
   useEffect(() => {
-    const { tickers } = parseShare(new URLSearchParams(window.location.search));
-    if (tickers.length > 0) setInput(tickers.join(', '));
+    const shared = parseShare(new URLSearchParams(window.location.search));
+    if (shared.tickers.length > 0) setInput(shared.tickers.join(', '));
+    if (hasActiveFilters(shared.filters) || shared.filters.includeUnavailable) setFilters(shared.filters);
   }, []);
 
   const preview = useMemo(() => parseTickers(input, MAX_TICKERS), [input]);
@@ -127,8 +129,8 @@ export default function Page() {
   }, [result]);
 
   const displayedRows = useMemo(
-    () => (result ? sortRows(result.rows, sortKey, sortDir, scoreMap) : []),
-    [result, sortKey, sortDir, scoreMap]
+    () => (result ? applyFilters(sortRows(result.rows, sortKey, sortDir, scoreMap), filters, (r) => scoreMap.get(r.ticker)) : []),
+    [result, sortKey, sortDir, scoreMap, filters]
   );
 
   function onSort(key: SortKey) {
@@ -154,7 +156,7 @@ export default function Page() {
 
   async function copyShareUrl() {
     const tickers = scannedTickers.length > 0 ? scannedTickers : preview.valid;
-    const qs = serializeShare(tickers, EMPTY_FILTERS);
+    const qs = serializeShare(tickers, filters);
     const url = `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ''}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -165,7 +167,7 @@ export default function Page() {
     window.setTimeout(() => setShareMsg(null), 4000);
   }
 
-  async function runScan(tickers: string[], refresh: boolean, invalid: string[]) {
+  async function runScan(tickers: string[], refresh: boolean, invalid: string[], merge = false) {
     if (scanningRef.current) return; // ignore repeated clicks while a scan is in flight
     if (tickers.length === 0) return;
 
@@ -175,8 +177,9 @@ export default function Page() {
 
     setPhase('loading');
     setErrorMsg(null);
+    setCancelled(false);
     setProgress({ completed: 0, total: tickers.length });
-    setScannedTickers(tickers);
+    if (!merge) setScannedTickers(tickers);
 
     const invalidErrors: ScanError[] = invalid.map((ticker) => ({
       ticker,
@@ -184,17 +187,34 @@ export default function Page() {
       message: 'Not a valid ticker symbol.'
     }));
 
+    // Progressive results: seed the (or prune the merged) result now; rows and
+    // errors then stream in via the callbacks as each ticker completes.
+    const retried = new Set(tickers);
+    setResult((prev) =>
+      merge && prev
+        ? { ...prev, errors: prev.errors.filter((e) => !retried.has(e.ticker)) }
+        : { rows: [], errors: invalidErrors, lastUpdatedAt: null }
+    );
+
+    const upsertRow = (prev: ScanResult | null, row: ScanRow): ScanResult => {
+      const base = prev ?? { rows: [], errors: invalidErrors, lastUpdatedAt: null };
+      const rows = base.rows.some((r) => r.ticker === row.ticker)
+        ? base.rows.map((r) => (r.ticker === row.ticker ? row : r))
+        : [...base.rows, row];
+      return { ...base, rows, lastUpdatedAt: newestTimestamp(rows) };
+    };
+
     try {
-      const { rows, errors } = await runClientScan(tickers, {
+      const { aborted } = await runClientScan(tickers, {
         refresh,
         signal: controller.signal,
-        onProgress: setProgress
+        onProgress: setProgress,
+        onRow: (row) => setResult((prev) => upsertRow(prev, row)),
+        onError: (error) => setResult((prev) => (prev ? { ...prev, errors: [...prev.errors, error] } : prev))
       });
-      if (controller.signal.aborted) return;
-      setResult({ rows, errors: [...invalidErrors, ...errors], lastUpdatedAt: newestTimestamp(rows) });
-      setPhase('done');
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
+      setCancelled(aborted);
+      setPhase('done'); // a cancelled scan keeps its partial results
+    } catch {
       setErrorMsg('Could not complete the scan. Please try again.');
       setPhase('error');
     } finally {
@@ -213,12 +233,28 @@ export default function Page() {
     void runScan(scannedTickers, true, []);
   }
 
+  function onCancel() {
+    // Stops new requests; in-flight fetches abort. Completed rows are kept.
+    abortRef.current?.abort();
+  }
+
+  function onRetryFailed() {
+    if (!result) return;
+    const retryable = [...new Set(
+      result.errors
+        .filter((e) => e.code === 'RATE_LIMITED' || e.code === 'PROVIDER_ERROR')
+        .map((e) => e.ticker)
+    )];
+    void runScan(retryable, true, [], true);
+  }
+
   function onClear() {
     abortRef.current?.abort();
     scanningRef.current = false;
     setInput('');
     setResult(null);
     setErrorMsg(null);
+    setCancelled(false);
     setPhase('idle');
     setProgress({ completed: 0, total: 0 });
     setScannedTickers([]);
@@ -231,6 +267,9 @@ export default function Page() {
 
   const hasRows = !!result && result.rows.length > 0;
   const hasErrors = !!result && result.errors.length > 0;
+  const retryableCount = result
+    ? new Set(result.errors.filter((e) => e.code === 'RATE_LIMITED' || e.code === 'PROVIDER_ERROR').map((e) => e.ticker)).size
+    : 0;
   const rateLimited = !!result && result.errors.some((e) => e.code === 'RATE_LIMITED');
   const isLoading = phase === 'loading';
 
@@ -289,8 +328,8 @@ export default function Page() {
           <button type="submit" className="primary" disabled={isLoading || preview.valid.length === 0}>
             {isLoading ? `Scanning ${progress.completed} of ${progress.total}…` : 'Scan'}
           </button>
-          <button type="button" className="secondary" onClick={onClear} disabled={isLoading}>
-            Clear
+          <button type="button" className="secondary" onClick={isLoading ? onCancel : onClear}>
+            {isLoading ? 'Cancel scan' : 'Clear'}
           </button>
         </div>
       </form>
@@ -306,6 +345,10 @@ export default function Page() {
         )}
 
         {phase === 'error' && <p className="message error">{errorMsg ?? 'Something went wrong.'}</p>}
+
+        {phase === 'done' && cancelled && (
+          <p className="message">Scan cancelled — showing the {result?.rows.length ?? 0} of {progress.total} tickers that completed.</p>
+        )}
 
         {phase === 'done' && !hasRows && !hasErrors && (
           <p className="message">No results. Try a ticker such as AAPL.</p>
@@ -360,6 +403,10 @@ export default function Page() {
               })()}
             </div>
           )}
+          <FilterBar rows={result.rows} filters={filters} onChange={setFilters} shown={displayedRows.length} />
+          {hasActiveFilters(filters) && displayedRows.length === 0 && (
+            <p className="message">No rows match the active filters. Loosen or clear them above.</p>
+          )}
           {mixedCurrency(displayedRows) && (
             <p className="meta comparability-note" role="note">
               ⚑ Rows span multiple or unknown currencies ({distinctCurrencies(displayedRows).join(', ') || 'unknown'}).
@@ -388,6 +435,11 @@ export default function Page() {
               </li>
             ))}
           </ul>
+          {!isLoading && retryableCount > 0 && (
+            <button type="button" className="secondary" onClick={onRetryFailed} title="Re-fetch only the tickers that failed transiently (rate limits, provider errors)">
+              Retry failed ({retryableCount})
+            </button>
+          )}
         </div>
       )}
 

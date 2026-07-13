@@ -8,6 +8,8 @@ export interface ScanProgress {
 export interface ClientScanResult {
   rows: ScanRow[];
   errors: ScanError[];
+  /** True when the scan was cancelled — rows/errors hold what completed. */
+  aborted: boolean;
 }
 
 export interface ClientScanOptions {
@@ -15,6 +17,10 @@ export interface ClientScanOptions {
   concurrency?: number;
   signal?: AbortSignal;
   onProgress?: (p: ScanProgress) => void;
+  /** Fired as each row arrives, in completion (not input) order. */
+  onRow?: (row: ScanRow) => void;
+  /** Fired as each per-ticker error arrives. */
+  onError?: (error: ScanError) => void;
   fetchImpl?: typeof fetch;
 }
 
@@ -27,8 +33,9 @@ interface ScanApiPayload {
  * Drive the scan one ticker at a time with bounded concurrency, reporting
  * "completed of total" progress as each finishes. Each request is independent,
  * so one failure never discards the others (partial results preserved). Output
- * order matches input order. An aborted signal rejects so the caller can ignore
- * the stale run.
+ * order matches input order. Cancellation is graceful: an aborted signal stops
+ * new requests, and the rows/errors that already completed are returned with
+ * `aborted: true` — a cancelled scan keeps its partial results.
  */
 export async function runClientScan(
   tickers: string[],
@@ -45,6 +52,7 @@ export async function runClientScan(
 
   async function worker(): Promise<void> {
     while (cursor < tickers.length) {
+      if (opts.signal?.aborted) return; // cancelled — start no further requests
       const ticker = tickers[cursor];
       cursor += 1;
       try {
@@ -56,16 +64,24 @@ export async function runClientScan(
         });
         if (res.ok) {
           const payload = (await res.json()) as ScanApiPayload;
-          for (const row of payload.rows ?? []) rowByTicker.set(row.ticker, row);
-          if (payload.errors && payload.errors.length > 0) errorsByTicker.set(ticker, payload.errors);
+          for (const row of payload.rows ?? []) {
+            rowByTicker.set(row.ticker, row);
+            opts.onRow?.(row);
+          }
+          if (payload.errors && payload.errors.length > 0) {
+            errorsByTicker.set(ticker, payload.errors);
+            for (const e of payload.errors) opts.onError?.(e);
+          }
         } else {
-          errorsByTicker.set(ticker, [
-            { ticker, code: 'PROVIDER_ERROR', message: `Request failed (HTTP ${res.status}).` }
-          ]);
+          const error: ScanError = { ticker, code: 'PROVIDER_ERROR', message: `Request failed (HTTP ${res.status}).` };
+          errorsByTicker.set(ticker, [error]);
+          opts.onError?.(error);
         }
       } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') throw err;
-        errorsByTicker.set(ticker, [{ ticker, code: 'PROVIDER_ERROR', message: 'Network error.' }]);
+        if (err instanceof Error && err.name === 'AbortError') return; // cancelled mid-request
+        const error: ScanError = { ticker, code: 'PROVIDER_ERROR', message: 'Network error.' };
+        errorsByTicker.set(ticker, [error]);
+        opts.onError?.(error);
       } finally {
         completed += 1;
         opts.onProgress?.({ completed, total });
@@ -84,5 +100,5 @@ export async function runClientScan(
     const errs = errorsByTicker.get(ticker);
     if (errs) errors.push(...errs);
   }
-  return { rows, errors };
+  return { rows, errors, aborted: opts.signal?.aborted === true };
 }

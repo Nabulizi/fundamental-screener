@@ -15,8 +15,21 @@ export interface FilterCriteria {
   dividendYieldMin: number | null;
   rangePositionMin: number | null;
   rangePositionMax: number | null;
+  /** Minimum Strength score (0–21). Needs row scores passed to the matcher. */
+  strengthMin: number | null;
+  /** Maximum Risk score (0–20). Needs row scores passed to the matcher. */
+  riskMax: number | null;
+  /** Minimum data-coverage fraction (0..1). Needs row scores passed to the matcher. */
+  coverageMin: number | null;
   /** When true, rows with a missing value pass an otherwise-active filter instead of failing it. */
   includeUnavailable: boolean;
+}
+
+/** Score context for the evidence-aware criteria (from scoreRow, per ticker). */
+export interface RowScores {
+  strength: number;
+  risk: number;
+  coverage: number;
 }
 
 export type FilterKey = Exclude<keyof FilterCriteria, 'includeUnavailable'>;
@@ -30,6 +43,9 @@ export const EMPTY_FILTERS: FilterCriteria = {
   dividendYieldMin: null,
   rangePositionMin: null,
   rangePositionMax: null,
+  strengthMin: null,
+  riskMax: null,
+  coverageMin: null,
   includeUnavailable: false
 };
 
@@ -58,7 +74,7 @@ function passIndustry(value: string | null, industry: string | null, includeUnav
   return value === industry;
 }
 
-export function rowMatches(row: ScanRow, c: FilterCriteria): boolean {
+export function rowMatches(row: ScanRow, c: FilterCriteria, scores?: RowScores): boolean {
   return (
     passIndustry(row.industry, c.industry, c.includeUnavailable) &&
     passMin(row.marketCap, c.marketCapMin, c.includeUnavailable) &&
@@ -67,13 +83,16 @@ export function rowMatches(row: ScanRow, c: FilterCriteria): boolean {
     passMax(row.trailingPE, c.peMax, c.includeUnavailable) &&
     passMin(row.dividendYieldPercent, c.dividendYieldMin, c.includeUnavailable) &&
     passMin(row.rangePosition, c.rangePositionMin, c.includeUnavailable) &&
-    passMax(row.rangePosition, c.rangePositionMax, c.includeUnavailable)
+    passMax(row.rangePosition, c.rangePositionMax, c.includeUnavailable) &&
+    passMin(scores?.strength ?? null, c.strengthMin, c.includeUnavailable) &&
+    passMax(scores?.risk ?? null, c.riskMax, c.includeUnavailable) &&
+    passMin(scores?.coverage ?? null, c.coverageMin, c.includeUnavailable)
   );
 }
 
 /** Filter rows, preserving input order. Pure — no provider calls. */
-export function applyFilters(rows: ScanRow[], c: FilterCriteria): ScanRow[] {
-  return rows.filter((row) => rowMatches(row, c));
+export function applyFilters(rows: ScanRow[], c: FilterCriteria, scoreOf?: (row: ScanRow) => RowScores | undefined): ScanRow[] {
+  return rows.filter((row) => rowMatches(row, c, scoreOf?.(row)));
 }
 
 /** Distinct, non-empty industries present in the rows, alphabetically sorted. */
@@ -111,6 +130,9 @@ export function describeActiveFilters(c: FilterCriteria): ActiveFilterChip[] {
   if (c.dividendYieldMin != null) chips.push({ key: 'dividendYieldMin', label: `Div yield ≥ ${formatPercent(c.dividendYieldMin)}` });
   if (c.rangePositionMin != null) chips.push({ key: 'rangePositionMin', label: `52W pos ≥ ${Math.round(c.rangePositionMin * 100)}%` });
   if (c.rangePositionMax != null) chips.push({ key: 'rangePositionMax', label: `52W pos ≤ ${Math.round(c.rangePositionMax * 100)}%` });
+  if (c.strengthMin != null) chips.push({ key: 'strengthMin', label: `Strength ≥ ${c.strengthMin}` });
+  if (c.riskMax != null) chips.push({ key: 'riskMax', label: `Risk ≤ ${c.riskMax}` });
+  if (c.coverageMin != null) chips.push({ key: 'coverageMin', label: `Coverage ≥ ${Math.round(c.coverageMin * 100)}%` });
   return chips;
 }
 

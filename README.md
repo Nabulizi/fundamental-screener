@@ -13,11 +13,16 @@ research page.
 
 ## Features
 
-- **Scan** a watchlist; per-ticker progress ("Scanning 3 of 8") with removable input chips.
+- **Scan** a watchlist; rows appear progressively as each ticker completes, with
+  per-ticker progress ("Scanning 3 of 8") and removable input chips. A scan can be
+  **cancelled** (completed rows are kept) and transiently failed tickers can be
+  **retried** without re-fetching the ones that succeeded.
+- **Filters** (display-only, never re-fetch): Strength/Risk/coverage ranges,
+  industry, market cap, P/E, and dividend yield, with active-filter chips.
 - **Research evidence** per company: industry, market cap, 52-week range, valuation, growth, cash-flow, Strength, Risk, and data coverage. The composite is an experimental heuristic, not a validated return forecast.
 - **Saved watchlists** in localStorage (create/rename/delete/add/remove/load) with corrupt-data tolerance — no account or database.
 - **Freshness:** each row is flagged fresh / cached / stale; **Refresh** re-fetches bypassing the cache; cached rows keep their original retrieval time.
-- **Export & share:** download the displayed (sorted) rows as CSV with timestamps; copy a shareable URL that encodes tickers (never any secret).
+- **Export & share:** download the displayed (sorted, filtered) rows as CSV with timestamps; copy a shareable URL that encodes tickers and filter state with a schema version (never any secret).
 - Sortable, accessible table; responsive desktop/mobile; not investment advice.
 
 ## Stack

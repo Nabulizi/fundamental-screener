@@ -646,6 +646,20 @@ tbody tr:hover {
   background: rgba(56, 189, 248, 0.06);
 }
 
+/* Narrow screens: pin the identity column so the company a row belongs to
+   stays visible while the metric columns scroll horizontally (P2-C). */
+@media (max-width: 700px) {
+  td.identity-cell,
+  thead th:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+  }
+  td.identity-cell { z-index: 1; }
+  thead th:first-child { z-index: 3; background: var(--panel-2); }
+}
+
 .na {
   color: var(--muted);
 }
@@ -872,6 +886,70 @@ tr.row-weak:hover { background: var(--panel-2); }
 tr.row-strong,
 tr.row-moderate,
 tr.row-weak { background: transparent; }
+
+/* Filter bar (display-only narrowing above the results table) */
+.filter-bar {
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.filter-bar summary {
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--accent);
+  list-style: none;
+  user-select: none;
+}
+.filter-bar summary::-webkit-details-marker { display: none; }
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.6rem 0.9rem;
+  padding: 0 0.9rem 0.75rem;
+}
+.filter-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.filter-grid input[type='number'],
+.filter-grid select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.85rem;
+}
+.filter-grid .filter-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: end;
+  padding-bottom: 0.35rem;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0 0.9rem 0.75rem;
+}
+.filter-chips .chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.filter-chips .chip:hover { border-color: var(--accent); }
+.filter-chips .chip-clear-all { color: var(--accent); font-weight: 600; }
 
 /* Methodology & Blind Spots accordion sections */
 .methodology-section,
