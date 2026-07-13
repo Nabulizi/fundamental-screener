@@ -153,6 +153,16 @@ stored raw (null when price/range missing or `high ≤ low`) and clamped to 0–
   instance has its own cache, so hits are not guaranteed across requests.
 - **Rate limits:** on HTTP 429 the app retries **once**, honoring `Retry-After`
   (seconds or HTTP-date), capped with small jitter to avoid retry storms.
+- **Request limits:** `/api/scan` enforces per-client scan and (stricter)
+  refresh budgets and returns `429` with `Retry-After` when exceeded. The
+  default limiter is in-process, which is correct for a single self-hosted
+  instance only. **Multi-instance or serverless deployments must register a
+  shared limiter** (e.g. Upstash/Redis): implement the `ScanRateLimiter`
+  interface from `lib/requestGuard.ts` and register it with
+  `setScanRateLimiter(...)` from `instrumentation.ts` at server startup. If
+  the shared backend fails, the route degrades to the per-instance bucket
+  (bounded, never unlimited). An edge/WAF rate limit in front of the app is
+  still recommended as the first layer.
 
 ## Scan history (snapshots)
 

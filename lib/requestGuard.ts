@@ -1,9 +1,43 @@
-/** Small in-process guard for the quota-bearing scan endpoint.
+/** Guard for the quota-bearing scan endpoint.
  *
- * This is a useful baseline for a self-hosted instance, not a substitute for
- * an edge/shared limiter in a multi-instance deployment. The route exposes the
- * retry window so a real Redis/edge adapter can replace this module later.
+ * The in-process token bucket below is the default and is sufficient for a
+ * single-instance/self-hosted deployment. Multi-instance or serverless
+ * deployments must register a shared limiter (e.g. Upstash/Redis) via
+ * `setScanRateLimiter` from `instrumentation.ts`; the route consumes budgets
+ * through `takeScanBudget`, which delegates to the registered limiter and
+ * falls back to the in-process bucket if the shared limiter fails (fail-open
+ * to local limiting, never to unlimited).
  */
+
+export interface RateLimitDecision {
+  allowed: boolean;
+  retryAfterSeconds: number;
+}
+
+export interface ScanRateLimiter {
+  /** kind separates the scan and (stricter) refresh budgets. */
+  consume(key: string, kind: 'scan' | 'refresh'): Promise<RateLimitDecision>;
+}
+
+let sharedLimiter: ScanRateLimiter | null = null;
+
+/** Register a deployment-shared limiter (null restores the in-process default). */
+export function setScanRateLimiter(limiter: ScanRateLimiter | null): void {
+  sharedLimiter = limiter;
+}
+
+/** The route-facing entry point: shared limiter when registered, else local. */
+export async function takeScanBudget(key: string, refresh: boolean): Promise<RateLimitDecision> {
+  if (sharedLimiter) {
+    try {
+      return await sharedLimiter.consume(key, refresh ? 'refresh' : 'scan');
+    } catch {
+      // Shared backend unavailable — degrade to the per-instance bucket so
+      // requests stay bounded rather than unlimited or hard-failing.
+    }
+  }
+  return consumeScanBudget(key, refresh);
+}
 
 interface Bucket {
   startedAt: number;

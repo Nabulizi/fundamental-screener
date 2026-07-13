@@ -4,7 +4,7 @@ import { buildProvider, cacheTtlSeconds } from '@/lib/buildProvider';
 import { scanTickers } from '@/lib/scan';
 import { recordSnapshots } from '@/lib/snapshotStore';
 import { getStore } from '@/lib/store';
-import { clientKey, consumeScanBudget, MAX_SCAN_BODY_BYTES } from '@/lib/requestGuard';
+import { clientKey, takeScanBudget, MAX_SCAN_BODY_BYTES } from '@/lib/requestGuard';
 import type { ScanError, ScanResponse } from '@/lib/types';
 
 // The Finnhub key is read here, server-side only. This module is never bundled
@@ -52,7 +52,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Request body must be a bounded JSON object.' }, noStore({ status: 400 }));
   }
 
-  const budget = consumeScanBudget(clientKey(request), body.refresh === true);
+  const budget = await takeScanBudget(clientKey(request), body.refresh === true);
   if (!budget.allowed) {
     return NextResponse.json(
       { error: 'Scan request rate limit reached. Please retry later.' },

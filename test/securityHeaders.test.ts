@@ -1,17 +1,15 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain .mjs config without type declarations
 import nextConfig from '../next.config.mjs';
 
 // Contract test: the security headers shipped for every route must not be
 // silently dropped or weakened during config/dependency changes.
 describe('security headers', () => {
   it('applies the required headers to all routes', async () => {
+    if (!nextConfig.headers) throw new Error('next.config.mjs no longer defines headers()');
     const rules = await nextConfig.headers();
-    const allRoutes = rules.find((rule: { source: string }) => rule.source === '/(.*)');
-    expect(allRoutes).toBeDefined();
-    const headers = new Map<string, string>(
-      allRoutes.headers.map((h: { key: string; value: string }) => [h.key, h.value])
-    );
+    const allRoutes = rules.find((rule) => rule.source === '/(.*)');
+    if (!allRoutes) throw new Error('catch-all header rule is missing');
+    const headers = new Map(allRoutes.headers.map((h) => [h.key, h.value]));
 
     const csp = headers.get('Content-Security-Policy') ?? '';
     expect(csp).toContain("default-src 'self'");
