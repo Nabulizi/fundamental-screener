@@ -1,4 +1,5 @@
 import { scoreRow, isBalanceSheetFinancial, type SignalTier } from './scoring';
+import { mixedCurrency } from './comparability';
 import type { ScanRow } from './types';
 
 // User-selected peer comparison — a lightweight "peer snapshot from screener
@@ -36,6 +37,14 @@ export interface PeerMedians {
   fcfYield: number | null;
   /** Count of available (successfully fetched) peers, excluding the selected company. */
   n: number;
+  /** Observations behind each median (a median can rest on fewer values than n). */
+  counts: { marketCap: number; revenueGrowthTTM: number; operatingMarginTTM: number; evToEbitda: number; fcfYield: number };
+  /**
+   * True when peers (or peers vs selected) span multiple/unknown currencies —
+   * the market-cap median is then suppressed (null) because raw monetary
+   * values in different currencies cannot be aggregated (P1-08).
+   */
+  mixedCurrency: boolean;
 }
 
 export interface PeerComparison {
@@ -104,15 +113,34 @@ export function buildPeerComparison(
   const col = (pick: (c: PeerCell) => number | null) =>
     cells.map(pick).filter((v): v is number => v != null);
 
+  // Monetary aggregation guard: the cap median is meaningless across
+  // different/unknown currencies, and it is displayed in the SELECTED
+  // company's currency — so the selected row participates in the check.
+  const capsMixed = mixedCurrency([selected, ...uniquePeers]);
+
+  const caps = col((c) => c.marketCap);
+  const growths = col((c) => c.revenueGrowthTTM);
+  const margins = col((c) => c.operatingMarginTTM);
+  const evs = col((c) => c.evToEbitda);
+  const fcfs = col((c) => (c.fcfYieldNm ? null : c.fcfYield));
+
   const medians: PeerMedians | null =
     uniquePeers.length >= 3
       ? {
-          marketCap: median(col((c) => c.marketCap)),
-          revenueGrowthTTM: median(col((c) => c.revenueGrowthTTM)),
-          operatingMarginTTM: median(col((c) => c.operatingMarginTTM)),
-          evToEbitda: median(col((c) => c.evToEbitda)),
-          fcfYield: median(col((c) => (c.fcfYieldNm ? null : c.fcfYield))),
+          marketCap: capsMixed ? null : median(caps),
+          revenueGrowthTTM: median(growths),
+          operatingMarginTTM: median(margins),
+          evToEbitda: median(evs),
+          fcfYield: median(fcfs),
           n: uniquePeers.length,
+          counts: {
+            marketCap: capsMixed ? 0 : caps.length,
+            revenueGrowthTTM: growths.length,
+            operatingMarginTTM: margins.length,
+            evToEbitda: evs.length,
+            fcfYield: fcfs.length,
+          },
+          mixedCurrency: capsMixed,
         }
       : null;
 

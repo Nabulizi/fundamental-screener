@@ -7,6 +7,7 @@ import type { QuoteProvider } from '@/lib/provider';
 import { parseTickers } from '@/lib/tickers';
 import { scoreRow, isBalanceSheetFinancial, hasInsufficientData, SCORING_VERSION, MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
 import { buildDataProvenance } from '@/lib/provenance';
+import { observeRow } from '@/lib/observations';
 import { recordSnapshots } from '@/lib/snapshotStore';
 import { getStore } from '@/lib/store';
 import { buildSnapshotHistory } from '@/lib/snapshotHistory';
@@ -25,6 +26,8 @@ import ChangeSincePanel from '@/components/ChangeSincePanel';
 import SnapshotHistoryPanel from '@/components/SnapshotHistoryPanel';
 import Explain from '@/components/Explain';
 import { tierGloss } from '@/lib/explain/glosses';
+
+const TIER_LABEL = { strong: 'Higher alignment', moderate: 'Mixed signals', weak: 'Insufficient / flagged' } as const;
 
 async function loadValuation(ticker: string, provider: ValuationProvider, ttlSeconds: number): Promise<ValuationProfile> {
   const cached = getCachedValuation(ticker);
@@ -49,9 +52,9 @@ async function loadSecondary(ticker: string, provider: QuoteProvider, ttlSeconds
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export default async function TickerPage({ params }: { params: { ticker: string } }) {
+export default async function TickerPage({ params }: { params: Promise<{ ticker: string }> }) {
   // Next.js App Router already URI-decodes dynamic segments; don't decode again.
-  const raw = params.ticker.toUpperCase();
+  const raw = (await params).ticker.toUpperCase();
   const parsed = parseTickers(raw, 1);
   // A per-ticker route must be exactly ONE clean ticker — reject multi-token
   // paths like /AAPL,MSFT (which would otherwise silently load AAPL) or any
@@ -151,7 +154,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
           <p className="subtitle">{row.companyName ?? '—'}{row.industry ? ` · ${row.industry}` : ''}</p>
         </div>
         <div className={`tier tier-${scored.tier}`}>
-          <span className="tier-name">{scored.tier}</span>
+          <span className="tier-name">{TIER_LABEL[scored.tier]}</span>
           <span className="tier-scores">
             Strength {scored.strengthScore}/{MAX_STRENGTH} · Risk {scored.riskScore}/{MAX_RISK}
           </span>
@@ -205,6 +208,7 @@ export default async function TickerPage({ params }: { params: { ticker: string 
         })}
         crossCheck={crossCheck}
         currency={row.currency}
+        observations={observeRow(row, crossCheck)}
       />
 
       <p className="meta">Informational only — not investment advice. Data retrieved {new Date(row.retrievedAt).toLocaleString()}.</p>

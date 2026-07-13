@@ -125,3 +125,31 @@ describe('helpers', () => {
     expect(activeFilterCount(cleared)).toBe(1);
   });
 });
+
+describe('evidence-aware criteria (strength/risk/coverage)', () => {
+  const scoreOf = (r: { ticker: string }) =>
+    r.ticker === 'GOOD'
+      ? { strength: 14, risk: 3, coverage: 0.9 }
+      : r.ticker === 'RISKY'
+        ? { strength: 15, risk: 9, coverage: 0.8 }
+        : undefined; // SPARSE has no scores
+
+  const rows = [row({ ticker: 'GOOD' }), row({ ticker: 'RISKY' }), row({ ticker: 'SPARSE' })];
+
+  it('filters by minimum strength, maximum risk, and minimum coverage', () => {
+    expect(applyFilters(rows, C({ strengthMin: 12 }), scoreOf).map((r) => r.ticker)).toEqual(['GOOD', 'RISKY']);
+    expect(applyFilters(rows, C({ strengthMin: 12, riskMax: 5 }), scoreOf).map((r) => r.ticker)).toEqual(['GOOD']);
+    expect(applyFilters(rows, C({ coverageMin: 0.85 }), scoreOf).map((r) => r.ticker)).toEqual(['GOOD']);
+  });
+
+  it('rows without scores fail active score filters unless includeUnavailable', () => {
+    expect(applyFilters(rows, C({ riskMax: 10 }), scoreOf).map((r) => r.ticker)).toEqual(['GOOD', 'RISKY']);
+    expect(applyFilters(rows, C({ riskMax: 10, includeUnavailable: true }), scoreOf).map((r) => r.ticker)).toEqual(['GOOD', 'RISKY', 'SPARSE']);
+  });
+
+  it('score filters are inert when no score context is provided', () => {
+    expect(applyFilters(rows, C({}), scoreOf)).toHaveLength(3);
+    // Active score filter with NO scoreOf at all: every row lacks scores.
+    expect(applyFilters(rows, C({ strengthMin: 1 }))).toHaveLength(0);
+  });
+});

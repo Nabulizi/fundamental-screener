@@ -72,4 +72,42 @@ describe('runClientScan', () => {
     await runClientScan(['AAPL'], { fetchImpl: fetchImpl as unknown as typeof fetch, refresh: true });
     expect(seen).toEqual([true]);
   });
+
+  it('streams rows and errors progressively via onRow/onError', async () => {
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { input: string };
+      if (body.input === 'BAD') return ok({ rows: [], errors: [{ ticker: 'BAD', code: 'NOT_FOUND', message: 'no data' }] });
+      return ok({ rows: [makeRow(body.input)], errors: [] });
+    });
+    const streamed: string[] = [];
+    const failed: string[] = [];
+    const out = await runClientScan(['AAPL', 'BAD'], {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      concurrency: 1,
+      onRow: (r) => streamed.push(r.ticker),
+      onError: (e) => failed.push(e.ticker)
+    });
+    expect(streamed).toEqual(['AAPL']);
+    expect(failed).toEqual(['BAD']);
+    expect(out.aborted).toBe(false);
+  });
+
+  it('cancellation keeps completed rows and reports aborted', async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as { input: string };
+      if (body.input === 'AAPL') return ok({ rows: [makeRow('AAPL')], errors: [] });
+      // Abort mid-scan: the remaining ticker rejects like a real aborted fetch.
+      controller.abort();
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    });
+    const out = await runClientScan(['AAPL', 'MSFT', 'KO'], {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      concurrency: 1,
+      signal: controller.signal
+    });
+    expect(out.aborted).toBe(true);
+    expect(out.rows.map((r) => r.ticker)).toEqual(['AAPL']); // partials preserved
+    expect(fetchImpl).toHaveBeenCalledTimes(2); // KO was never started
+  });
 });

@@ -11,6 +11,41 @@ export interface ScanOptions {
   refresh?: boolean;
 }
 
+/**
+ * In-flight coalescing (P1-E): concurrent requests for the same provider+ticker
+ * share ONE provider call instead of each spending quota. The map is
+ * module-level so duplicate work is deduplicated across simultaneous scans
+ * (e.g. two clients scanning AAPL, or a scan racing a detail-page load).
+ * Entries are removed as soon as the fetch settles — errors are shared with
+ * every waiter but never cached here.
+ */
+const inFlight = new Map<string, Promise<ScanRow>>();
+
+function fetchCoalesced(provider: QuoteProvider, ticker: string, telemetry: ScanTelemetry): Promise<ScanRow> {
+  const key = `${provider.name}:${ticker}`;
+  const existing = inFlight.get(key);
+  if (existing) {
+    telemetry.coalescedJoins += 1;
+    return existing;
+  }
+  telemetry.providerCalls += 1;
+  const pending = provider.fetchCompany(ticker).finally(() => inFlight.delete(key));
+  inFlight.set(key, pending);
+  return pending;
+}
+
+/** Per-scan provider-economics counters, reported on the ScanResponse. */
+export interface ScanTelemetry {
+  /** Provider fetches this scan initiated (spent quota). */
+  providerCalls: number;
+  /** Rows served from the TTL cache. */
+  cacheHits: number;
+  /** Fetches that joined another scan's identical in-flight call (spent no quota). */
+  coalescedJoins: number;
+  /** Tickers that ended in an error (including circuit-breaker skips). */
+  failures: number;
+}
+
 function toScanError(ticker: string, err: unknown): ScanError {
   if (err instanceof ProviderError) {
     return { ticker, code: err.code, message: err.message };
@@ -37,6 +72,7 @@ export async function scanTickers(
   const rows: ScanRow[] = [];
   const errors: ScanError[] = [];
   const queue = [...tickers];
+  const telemetry: ScanTelemetry = { providerCalls: 0, cacheHits: 0, coalescedJoins: 0, failures: 0 };
 
   async function worker(): Promise<void> {
     for (;;) {
@@ -51,14 +87,16 @@ export async function scanTickers(
         const cachedRow = useCache && !refresh ? getCached(ticker) : null;
         if (cachedRow) {
           // Served from cache — keep its original retrievedAt, flag as cached.
+          telemetry.cacheHits += 1;
           rows.push({ ...cachedRow, cached: true });
         } else {
-          const row = await provider.fetchCompany(ticker);
+          const row = await fetchCoalesced(provider, ticker, telemetry);
           if (useCache) setCached(ticker, row, ttlSeconds);
           rows.push({ ...row, cached: false });
           recordSuccess(ticker);
         }
       } catch (err) {
+        telemetry.failures += 1;
         errors.push(toScanError(ticker, err));
         // NOT_FOUND is a permanent condition (bad ticker), not a transient failure.
         if (!(err instanceof ProviderError && err.code === 'NOT_FOUND')) {
@@ -80,5 +118,5 @@ export async function scanTickers(
     ? rows.map((r) => r.retrievedAt).sort().at(-1) ?? null
     : null;
 
-  return { rows, errors, lastUpdatedAt };
+  return { rows, errors, lastUpdatedAt, telemetry };
 }

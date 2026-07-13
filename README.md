@@ -3,8 +3,9 @@
 [![CI](https://github.com/Nabulizi/fundamental-screener/actions/workflows/ci.yml/badge.svg)](https://github.com/Nabulizi/fundamental-screener/actions/workflows/ci.yml)
 
 A small Next.js web app that compares fundamentals across a watchlist of stock
-tickers. Enter one or more tickers and get a sortable table of industry, market
-cap, 52-week range, trailing P/E, and dividend yield.
+tickers. Enter one or more tickers and get a sortable research table with
+market data, Strength/Risk evidence, coverage, and links to a deeper company
+research page.
 
 > This tool is for informational purposes only. It does **not** provide buy,
 > sell, or hold recommendations. Unavailable data is shown as **“N/A”**, never as
@@ -12,21 +13,31 @@ cap, 52-week range, trailing P/E, and dividend yield.
 
 ## Features
 
-- **Scan** a watchlist; per-ticker progress ("Scanning 3 of 8") with removable input chips.
-- **Five core metrics** per company: industry, market cap, 52-week low/high, trailing P/E, dividend yield — plus current price and a 52-week range indicator.
-- **Filters** (client-side, no extra requests): industry, market-cap, P/E, min dividend yield, 52-week position. Missing values fail an active filter by default, with an opt-in "include unavailable" toggle, per-filter chips, a match count, and one-click reset.
+- **Scan** a watchlist; rows appear progressively as each ticker completes, with
+  per-ticker progress ("Scanning 3 of 8") and removable input chips. A scan can be
+  **cancelled** (completed rows are kept) and transiently failed tickers can be
+  **retried** without re-fetching the ones that succeeded.
+- **Filters** (display-only, never re-fetch): Strength/Risk/coverage ranges,
+  industry, market cap, P/E, and dividend yield, with active-filter chips.
+- **Research evidence** per company: industry, market cap, 52-week range, valuation, growth, cash-flow, Strength, Risk, and data coverage. The composite is an experimental heuristic, not a validated return forecast.
 - **Saved watchlists** in localStorage (create/rename/delete/add/remove/load) with corrupt-data tolerance — no account or database.
 - **Freshness:** each row is flagged fresh / cached / stale; **Refresh** re-fetches bypassing the cache; cached rows keep their original retrieval time.
-- **Export & share:** download the displayed (filtered + sorted) rows as CSV with timestamps; copy a shareable URL that encodes tickers + filters (never any secret).
+- **Export & share:** download the displayed (sorted, filtered) rows as CSV with timestamps; copy a shareable URL that encodes tickers and filter state with a schema version (never any secret).
 - Sortable, accessible table; responsive desktop/mobile; not investment advice.
 
 ## Stack
 
-- Next.js 14 (App Router) + TypeScript
+- Next.js 16 (App Router) + TypeScript
 - A server-only API route (`/api/scan`) that holds the API key
 - [Finnhub](https://finnhub.io) as the data provider, behind a swappable
   `QuoteProvider` interface
 - Vitest for unit tests
+
+## Project review and roadmap
+
+The evidence-backed usability, functionality, credibility, security, and
+scientific-validation plan is in
+[`docs/project-review-and-roadmap.md`](docs/project-review-and-roadmap.md).
 
 ## Configure the data API
 
@@ -89,6 +100,8 @@ Other scripts:
 
 ```bash
 npm run probe      # live Finnhub field-map probe (needs FINNHUB_API_KEY)
+npm run probe -- --pit  # financials-reported PIT/versioning probe
+npm run export:pit # raw financials-reported export for PIT v0 backtest
 npm test           # unit tests
 npm run typecheck  # tsc --noEmit
 npm run lint       # next lint
@@ -145,6 +158,16 @@ stored raw (null when price/range missing or `high ≤ low`) and clamped to 0–
   instance has its own cache, so hits are not guaranteed across requests.
 - **Rate limits:** on HTTP 429 the app retries **once**, honoring `Retry-After`
   (seconds or HTTP-date), capped with small jitter to avoid retry storms.
+- **Request limits:** `/api/scan` enforces per-client scan and (stricter)
+  refresh budgets and returns `429` with `Retry-After` when exceeded. The
+  default limiter is in-process, which is correct for a single self-hosted
+  instance only. **Multi-instance or serverless deployments must register a
+  shared limiter** (e.g. Upstash/Redis): implement the `ScanRateLimiter`
+  interface from `lib/requestGuard.ts` and register it with
+  `setScanRateLimiter(...)` from `instrumentation.ts` at server startup. If
+  the shared backend fails, the route degrades to the per-instance bucket
+  (bounded, never unlimited). An edge/WAF rate limit in front of the app is
+  still recommended as the first layer.
 
 ## Scan history (snapshots)
 

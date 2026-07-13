@@ -5,6 +5,7 @@ import type { ScanRow } from '@/lib/types';
 import { parseTickers } from '@/lib/tickers';
 import { useWatchlists } from '@/lib/useWatchlists';
 import { buildPeerComparison, type PeerRow, type PeerCell } from '@/lib/peers';
+import { peerComparabilityWarnings } from '@/lib/comparability';
 import { formatMarketCap, formatPercent, formatReturn, formatRatio } from '@/lib/format';
 
 const MAX_PEERS = 8;
@@ -52,6 +53,7 @@ export default function PeerComparison({ selected }: Props) {
   }
 
   const model = data ? buildPeerComparison(selected, data.peers, data.unavailable) : null;
+  const warnings = data ? peerComparabilityWarnings(selected, data.peers) : [];
 
   return (
     <section className="peers">
@@ -87,6 +89,10 @@ export default function PeerComparison({ selected }: Props) {
       </div>
       {error && <p className="dcf-warn">{error}</p>}
 
+      {warnings.map((w) => (
+        <p key={w.kind} className="hint peers-warning">⚑ {w.message}</p>
+      ))}
+
       {model && (
         <div className="peers-scroll">
           <table className="ft-table peers-table">
@@ -101,11 +107,13 @@ export default function PeerComparison({ selected }: Props) {
               {model.medians && (
                 <tr className="peers-median">
                   <th scope="row">Peer median (excl. this company, n={model.medians.n})</th>
-                  <td>{formatMarketCap(model.medians.marketCap, selected.currency)}</td>
-                  <td>{formatReturn(model.medians.revenueGrowthTTM)}</td>
-                  <td>{formatPercent(model.medians.operatingMarginTTM)}</td>
-                  <td>{formatRatio(model.medians.evToEbitda)}</td>
-                  <td>{formatPercent(model.medians.fcfYield)}</td>
+                  <td title={model.medians.mixedCurrency ? 'Suppressed: peers span multiple or unknown currencies — raw market caps cannot be aggregated' : `${model.medians.counts.marketCap} of ${model.medians.n} peers have this metric`}>
+                    {model.medians.mixedCurrency ? 'n.m. (mixed ccy)' : formatMarketCap(model.medians.marketCap, selected.currency)}
+                  </td>
+                  <td title={`${model.medians.counts.revenueGrowthTTM} of ${model.medians.n} peers have this metric`}>{formatReturn(model.medians.revenueGrowthTTM)}</td>
+                  <td title={`${model.medians.counts.operatingMarginTTM} of ${model.medians.n} peers have this metric`}>{formatPercent(model.medians.operatingMarginTTM)}</td>
+                  <td title={`${model.medians.counts.evToEbitda} of ${model.medians.n} peers have this metric`}>{formatRatio(model.medians.evToEbitda)}</td>
+                  <td title={`${model.medians.counts.fcfYield} of ${model.medians.n} peers have this metric`}>{formatPercent(model.medians.fcfYield)}</td>
                   <td>—</td>
                 </tr>
               )}

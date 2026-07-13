@@ -68,7 +68,7 @@ export function tierGloss(tier: SignalTier, strength: number, risk: number): Glo
     define:
       'Strength (0–21) adds up the positive fundamental signals; Risk (0–20) adds up the ' +
       "warning signals. They're separate on purpose — a company can be both strong and risky. The " +
-      'tier (Strong / Moderate / Weak) starts from the Strength score, then risk, data-quality, and ' +
+      'research alignment label (Higher alignment / Mixed signals / Insufficient or flagged) starts from the Strength score, then risk, data-quality, and ' +
       'overlay rules (disqualifiers, insufficient data, crowding, value-trap, peak-cycle, soft ' +
       'earnings quality) can floor or cap it. It is a neutral label, not a rating and not a recommendation.',
     read: `Here: Strength ${strength}, Risk ${risk} → ${tier}. A high Strength narrows what to research next; it isn't a conclusion on its own.`,

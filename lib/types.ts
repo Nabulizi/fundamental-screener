@@ -82,4 +82,11 @@ export interface ScanResponse {
   /** Newest `retrievedAt` among rows, or null when there are no rows. */
   lastUpdatedAt: string | null;
   meta?: ScanMeta;
+  /** Provider-economics counters for this scan (see lib/scan.ts ScanTelemetry). */
+  telemetry?: {
+    providerCalls: number;
+    cacheHits: number;
+    coalescedJoins: number;
+    failures: number;
+  };
 }

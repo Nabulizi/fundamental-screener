@@ -49,9 +49,34 @@ describe('share URL serialization round-trip', () => {
     expect(qs.toLowerCase()).not.toContain('key');
     expect(qs.toLowerCase()).not.toContain('token');
     // only known short param names appear
-    const allowed = new Set(['t', 'ind', 'mcmin', 'mcmax', 'pemin', 'pemax', 'dymin', 'rpmin', 'rpmax', 'inc']);
+    const allowed = new Set(['t', 'ind', 'mcmin', 'mcmax', 'pemin', 'pemax', 'dymin', 'rpmin', 'rpmax', 'smin', 'rmax', 'cmin', 'inc', 'v']);
     for (const [k] of new URLSearchParams(qs)) {
       expect(allowed.has(k)).toBe(true);
     }
+  });
+
+  it('round-trips the evidence-aware v2 filters with a version stamp', () => {
+    const qs = serializeShare(['AAPL'], C({ strengthMin: 12, riskMax: 5, coverageMin: 0.7 }));
+    expect(new URLSearchParams(qs).get('v')).toBe('2');
+    const out = parseShare(new URLSearchParams(qs));
+    expect(out.filters.strengthMin).toBe(12);
+    expect(out.filters.riskMax).toBe(5);
+    expect(out.filters.coverageMin).toBe(0.7);
+  });
+
+  it('leaves bare ticker links unversioned', () => {
+    const qs = serializeShare(['AAPL'], C({}));
+    expect(new URLSearchParams(qs).get('v')).toBeNull();
+  });
+
+  it('keeps tickers but drops filters from a newer-schema link', () => {
+    const out = parseShare(new URLSearchParams('t=AAPL&v=99&smin=12&newthing=5'));
+    expect(out.tickers).toEqual(['AAPL']);
+    expect(out.filters.strengthMin).toBeNull();
+  });
+
+  it('parses legacy links without a version param', () => {
+    const out = parseShare(new URLSearchParams('t=AAPL&pemax=30'));
+    expect(out.filters.peMax).toBe(30);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { toCsv, escapeCsvField } from '@/lib/csv';
 import type { ScanRow } from '@/lib/types';
+import { SCORING_VERSION } from '@/lib/scoring';
 
 function row(over: Partial<ScanRow>): ScanRow {
   return {
@@ -69,5 +70,11 @@ describe('toCsv', () => {
   it('includes the per-row retrieval timestamp', () => {
     const csv = toCsv([row({})]);
     expect(csv).toContain('2026-06-19T20:00:00.000Z');
+  });
+
+  it('includes score evidence and methodology metadata for auditability', () => {
+    const csv = toCsv([row({})]);
+    expect(csv).toContain('Source,Strength,Risk,Data Coverage,Research Tier,Scoring Version');
+    expect(csv.split('\r\n')[1]).toMatch(new RegExp(`\\d+/\\d+,\\d+/\\d+,\\d+/\\d+,(strong|moderate|weak),${SCORING_VERSION}$`));
   });
 });

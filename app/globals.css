@@ -45,6 +45,19 @@ h1 {
   color: var(--muted);
 }
 
+.evidence-status {
+  margin: 0 0 1.25rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.evidence-status strong { color: var(--text); }
+
 /* Fear & Greed market sentiment badge */
 .fear-greed-badge {
   display: inline-flex;
@@ -633,6 +646,20 @@ tbody tr:hover {
   background: rgba(56, 189, 248, 0.06);
 }
 
+/* Narrow screens: pin the identity column so the company a row belongs to
+   stays visible while the metric columns scroll horizontally (P2-C). */
+@media (max-width: 700px) {
+  td.identity-cell,
+  thead th:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+  }
+  td.identity-cell { z-index: 1; }
+  thead th:first-child { z-index: 3; background: var(--panel-2); }
+}
+
 .na {
   color: var(--muted);
 }
@@ -719,6 +746,11 @@ tbody tr:hover {
 .score-strong { color: #4ade80; }
 .score-moderate { color: #fbbf24; }
 .score-weak { color: #f87171; }
+
+/* Tiers are experimental research labels, not traffic-light recommendations. */
+.score-strong,
+.score-moderate,
+.score-weak { color: var(--text); }
 
 /* Strength / Risk / flag meta line in the expanded breakdown */
 .breakdown-meta {
@@ -851,6 +883,74 @@ tr.row-strong:hover,
 tr.row-moderate:hover,
 tr.row-weak:hover { background: var(--panel-2); }
 
+tr.row-strong,
+tr.row-moderate,
+tr.row-weak { background: transparent; }
+
+/* Filter bar (display-only narrowing above the results table) */
+.filter-bar {
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.filter-bar summary {
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--accent);
+  list-style: none;
+  user-select: none;
+}
+.filter-bar summary::-webkit-details-marker { display: none; }
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.6rem 0.9rem;
+  padding: 0 0.9rem 0.75rem;
+}
+.filter-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.filter-grid input[type='number'],
+.filter-grid select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.85rem;
+}
+.filter-grid .filter-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: end;
+  padding-bottom: 0.35rem;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0 0.9rem 0.75rem;
+}
+.filter-chips .chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.filter-chips .chip:hover { border-color: var(--accent); }
+.filter-chips .chip-clear-all { color: var(--accent); font-weight: 600; }
+
 /* Methodology & Blind Spots accordion sections */
 .methodology-section,
 .blind-spots-section {
@@ -963,6 +1063,14 @@ tr.row-weak:hover { background: var(--panel-2); }
 .tier.tier-moderate .tier-name { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
 .tier.tier-weak .tier-name { background: rgba(248, 113, 113, 0.12); color: #f87171; }
 
+.tier.tier-strong .tier-name,
+.tier.tier-moderate .tier-name,
+.tier.tier-weak .tier-name {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .metric { background: var(--panel); padding: 0.7rem 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; }
 .metric-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -987,6 +1095,10 @@ tr.row-weak:hover { background: var(--panel-2); }
 .ds-xcheck dd { margin: 0.2rem 0 0; }
 .ds-xcheck-list { list-style: none; margin: 0.2rem 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1.5rem; font-size: 0.88rem; }
 .ds-xcheck-label { color: var(--muted); }
+.ds-observations { margin-top: 0.75rem; }
+.ds-observations dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ds-observations dd { margin: 0.2rem 0 0; }
+.dq-flag { color: var(--warn, #b45309); }
 .src-av { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.25rem; cursor: help; }
 
 .peers { margin-top: 2rem; }

@@ -1,6 +1,7 @@
 import type { ScanRow } from './types';
 import { formatMarketCap, formatCurrency, formatPercent, formatReturn, formatPe, formatRatio, NA } from './format';
 import { clampFraction } from './range';
+import { scoreRow, SCORING_VERSION, MAX_RISK, MAX_STRENGTH } from './scoring';
 
 const HEADERS = [
   'Ticker',
@@ -19,7 +20,13 @@ const HEADERS = [
   'Revenue Growth (TTM)',
   'D/E',
   'EV/EBITDA',
-  'Retrieved At (UTC)'
+  'Retrieved At (UTC)',
+  'Source',
+  'Strength',
+  'Risk',
+  'Data Coverage',
+  'Research Tier',
+  'Scoring Version'
 ];
 
 /** RFC 4180 field escaping: quote fields containing comma, quote, or newline. */
@@ -45,6 +52,7 @@ export function toCsv(rows: ScanRow[]): string {
   const lines: string[] = [HEADERS.map(escapeCsvField).join(',')];
 
   for (const r of rows) {
+    const scored = scoreRow(r);
     const cells = [
       r.ticker,
       r.companyName ?? NA,
@@ -62,7 +70,13 @@ export function toCsv(rows: ScanRow[]): string {
       formatReturn(r.revenueGrowthTTM),
       formatRatio(r.debtToEquity),
       formatRatio(r.evToEbitda),
-      r.retrievedAt
+      r.retrievedAt,
+      r.source ?? NA,
+      `${scored.strengthScore}/${MAX_STRENGTH}`,
+      `${scored.riskScore}/${MAX_RISK}`,
+      `${scored.coverage.covered}/${scored.coverage.applicable}`,
+      scored.tier,
+      String(SCORING_VERSION)
     ];
     lines.push(cells.map((c) => escapeCsvField(String(c))).join(','));
   }

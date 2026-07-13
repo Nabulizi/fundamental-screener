@@ -15,7 +15,9 @@ export type SortKey =
   | 'evToEbitda'
   | 'week52High'
   | 'week52Low'
-  | 'score';
+  | 'strength'
+  | 'risk'
+  | 'coverage';
 
 export type SortDir = 'asc' | 'desc';
 
@@ -32,7 +34,9 @@ const NUMERIC_KEYS: SortKey[] = [
   'evToEbitda',
   'week52High',
   'week52Low',
-  'score'
+  'strength',
+  'risk',
+  'coverage'
 ];
 
 function isMissing(value: number | null): boolean {
@@ -44,25 +48,39 @@ function isMissing(value: number | null): boolean {
  * values always sort to the end regardless of direction, so "N/A" never
  * masquerades as the smallest or largest value.
  *
- * When sorting by 'score', pass a `scoreMap` mapping ticker → score.
+ * Strength, risk, and coverage are derived from the scoring map passed by the
+ * caller. They stay separate so a high Strength row cannot hide material risk.
  */
-export function sortRows(rows: ScanRow[], key: SortKey, dir: SortDir, scoreMap?: Map<string, number>): ScanRow[] {
+export interface SortMetrics {
+  strength: number;
+  risk: number;
+  coverage: number;
+}
+
+export function sortRows(rows: ScanRow[], key: SortKey, dir: SortDir, scoreMap?: Map<string, SortMetrics>): ScanRow[] {
   const numeric = NUMERIC_KEYS.includes(key);
   return [...rows].sort((a, b) => {
     if (numeric) {
-      const av = key === 'score' ? (scoreMap?.get(a.ticker) ?? null) : a[key as keyof ScanRow] as number | null;
-      const bv = key === 'score' ? (scoreMap?.get(b.ticker) ?? null) : b[key as keyof ScanRow] as number | null;
+      const av = (key === 'strength' || key === 'risk' || key === 'coverage')
+        ? (scoreMap?.get(a.ticker)?.[key] ?? null)
+        : a[key as keyof ScanRow] as number | null;
+      const bv = (key === 'strength' || key === 'risk' || key === 'coverage')
+        ? (scoreMap?.get(b.ticker)?.[key] ?? null)
+        : b[key as keyof ScanRow] as number | null;
       const am = isMissing(av);
       const bm = isMissing(bv);
       if (am && bm) return 0;
       if (am) return 1;
       if (bm) return -1;
-      return dir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number);
+      const cmp = dir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number);
+      if (cmp !== 0) return cmp;
+      return a.ticker.localeCompare(b.ticker);
     }
     const rk = key as keyof ScanRow;
     const av = ((a[rk] as string | null) ?? '').toString();
     const bv = ((b[rk] as string | null) ?? '').toString();
     const cmp = av.localeCompare(bv);
-    return dir === 'asc' ? cmp : -cmp;
+    if (cmp !== 0) return dir === 'asc' ? cmp : -cmp;
+    return a.ticker.localeCompare(b.ticker);
   });
 }

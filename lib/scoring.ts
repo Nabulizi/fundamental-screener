@@ -3,7 +3,7 @@ import { clampFraction } from './range';
 import { formatPercent, formatReturn, formatPe, formatRatio } from './format';
 
 // ---------------------------------------------------------------------------
-// Master Scoring Framework (v3) — 12 criteria, weighted by significance tier,
+// Master Scoring Framework (v4) — 12 criteria, weighted by significance tier,
 // split into two independent scores instead of one signed total.
 //
 //   Tier 1 (×3) — Survival & Quality:  Earnings Quality, Leverage
