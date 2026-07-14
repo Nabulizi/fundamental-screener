@@ -22,7 +22,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 const ROOT = path.join(import.meta.dirname, '..');
-const CHUNK = 20; // stay within MAX_TICKERS per request
+const configuredMax = Number(process.env.MAX_TICKERS);
+const CHUNK = Number.isFinite(configuredMax) && configuredMax > 0 ? Math.floor(configuredMax) : 20;
 const PORT = 4321;
 // Invoke Next through THIS node binary and the repo-local bin — under launchd
 // there is no shell profile, so neither `npx` nor `/usr/bin/env node` resolves.
@@ -61,14 +62,25 @@ async function serverUp(base) {
 }
 
 async function scanChunk(base, tickers) {
-  const res = await fetch(`${base}/api/scan`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tickers }),
-    signal: AbortSignal.timeout(120_000)
-  });
-  if (!res.ok) throw new Error(`scan HTTP ${res.status}`);
-  return res.json();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(`${base}/api/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tickers }),
+      signal: AbortSignal.timeout(120_000)
+    });
+    if (res.status === 429 && attempt === 0) {
+      const retryAfter = Math.max(1, Number(res.headers.get('retry-after')) || 60);
+      console.log(`[daily-snapshot] provider budget reached — retrying chunk in ${retryAfter}s`);
+      await new Promise((r) => setTimeout(r, retryAfter * 1_000));
+      continue;
+    }
+    if (!res.ok) throw new Error(`scan HTTP ${res.status}`);
+    const out = await res.json();
+    if (out.meta?.limited) throw new Error(`server truncated a ${tickers.length}-ticker chunk at ${out.meta.maxTickers}`);
+    return out;
+  }
+  throw new Error('scan retry exhausted');
 }
 
 const universe = await loadUniverse();
@@ -101,6 +113,7 @@ if (!base || !(await serverUp(base))) {
 let rows = 0;
 let errors = 0;
 let providerCalls = 0;
+let snapshotsRecorded = 0;
 let failedChunks = 0;
 
 try {
@@ -111,6 +124,7 @@ try {
       rows += out.rows?.length ?? 0;
       errors += out.errors?.length ?? 0;
       providerCalls += out.telemetry?.providerCalls ?? 0;
+      snapshotsRecorded += out.telemetry?.snapshotsRecorded ?? 0;
       for (const e of out.errors ?? []) console.error(`[daily-snapshot]   ${e.ticker}: ${e.code}`);
     } catch (err) {
       failedChunks += 1;
@@ -124,6 +138,6 @@ try {
 }
 
 console.log(
-  `[daily-snapshot] done: ${rows} rows, ${errors} ticker errors, ${failedChunks} failed chunks, ${providerCalls} provider calls`
+  `[daily-snapshot] done: ${rows} rows, ${snapshotsRecorded} snapshots recorded, ${errors} ticker errors, ${failedChunks} failed chunks, ${providerCalls} provider calls`
 );
-process.exit(rows > 0 ? 0 : 1);
+process.exit(snapshotsRecorded > 0 && failedChunks === 0 ? 0 : 1);

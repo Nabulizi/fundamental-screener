@@ -29,6 +29,8 @@ export function useWatchlists(): UseWatchlists {
 
   useEffect(() => {
     try {
+      // localStorage is client-only; hydrate after mount to keep SSR deterministic.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLists(parseStored(window.localStorage.getItem(STORAGE_KEY)));
     } catch {
       setLists([]);

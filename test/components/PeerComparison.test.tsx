@@ -33,4 +33,15 @@ describe('PeerComparison', () => {
     expect(screen.getByText(/unavailable/i)).toBeInTheDocument();
     expect(screen.getByText(/Peer median .*excl\. this company, n=3/i)).toBeInTheDocument();
   });
+
+  it('renders each peer market cap in its own currency', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ rows: [row('SAP', { currency: 'EUR', marketCap: 2e9 })] }),
+    })));
+    render(<PeerComparison selected={row('AAPL')} />);
+    fireEvent.change(screen.getByPlaceholderText(/peer tickers/i), { target: { value: 'SAP' } });
+    fireEvent.click(screen.getByText('Compare'));
+    await waitFor(() => expect(screen.getByText('€2.00B')).toBeInTheDocument());
+  });
 });

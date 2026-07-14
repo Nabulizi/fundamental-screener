@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useMemo, useState, useCallback } from 'react';
+import { Fragment, type ReactNode, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type { ScanRow } from '@/lib/types';
 import { type SortDir, type SortKey } from '@/lib/sort';
@@ -162,6 +162,8 @@ interface ResultsTableProps {
 
 export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, onSort }: ResultsTableProps) {
   const updatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleString() : NA;
+  // Freshness is a mount-time label; it does not drive reactive state.
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
 
   // Track which rows have their score breakdown expanded
@@ -263,8 +265,8 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
             const eqDisqualifies = !!causes?.earningsQuality;
             const levDisqualifies = !!causes?.leverage;
             return (
-              <>
-              <tr key={row.ticker} className={`row-${tier}`}>
+              <Fragment key={row.ticker}>
+              <tr className={`row-${tier}`}>
                 {COLUMNS.map((col, idx) => {
                   if (col.identity) {
                     return (
@@ -294,10 +296,10 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                           <span className="score-flag" title={scored.flags.disqualified ? 'Hard floor: critical input rule' : `Elevated risk (${scored.riskScore}/${MAX_RISK})`}>⚠</span>
                         )}
                         {scored.flags.insufficientData && !scored.flags.disqualified && scored.riskScore < RISK_FLOOR && (
-                          <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — a missing value can never flag risk, so the tier is capped at Weak.`}>◌</span>
+                          <span className="score-flag" title={`Insufficient data (${scored.coverage.covered}/${scored.coverage.applicable} criteria have data) — missing values cannot establish low risk, so the alignment label is Insufficient / flagged.`}>◌</span>
                         )}
                         {(scored.flags.valueTrap || scored.flags.peakCycle) && (
-                          <span className="score-flag" title={scored.flags.valueTrap ? 'Possible value trap: optically cheap with shrinking revenue — capped at Moderate.' : 'Possible cycle peak: cheap on trailing numbers while estimates roll over — capped at Moderate.'}>▽</span>
+                          <span className="score-flag" title={scored.flags.valueTrap ? 'Possible value trap: optically cheap with shrinking revenue — limited to Mixed signals.' : 'Possible cycle peak: cheap on trailing numbers while estimates roll over — limited to Mixed signals.'}>▽</span>
                         )}
                         <span className={`score-chevron${isExpanded ? ' open' : ''}`} aria-hidden="true">▾</span>
                       </td>
@@ -349,25 +351,25 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                         <span className="bd-flag" title="The provider's revenue-growth figure is implausible (beyond sanity bounds) — neutralized rather than scored. Verify at the source.">⚑ Revenue growth looks implausible (neutralized)</span>
                       )}
                       {scored.flags.insufficientData && (
-                        <span className="bd-flag" title="Too few criteria have data to trust a tier — missing values can never flag risk, so sparse rows would otherwise look artificially safe.">◌ Insufficient data (tier capped at Weak)</span>
+                        <span className="bd-flag" title="Too few criteria have data to support an alignment label — missing values cannot establish low risk.">◌ Insufficient data (alignment flagged)</span>
                       )}
                       {scored.flags.valueTrap && (
-                        <span className="bd-flag" title="Optically cheap (low EV/EBITDA or high FCF yield) while revenue is shrinking — the cheapness likely prices the decline, not a mispricing. Capped at Moderate.">▽ Possible value trap (cheap + shrinking)</span>
+                        <span className="bd-flag" title="Optically cheap (low EV/EBITDA or high FCF yield) while revenue is shrinking — the cheapness may price the decline, so the label is limited to Mixed signals.">▽ Possible value trap (cheap + shrinking)</span>
                       )}
                       {scored.flags.peakCycle && (
-                        <span className="bd-flag" title="Cyclical that looks cheap on trailing numbers while forward estimates roll over — the classic top-of-cycle signature. Capped at Moderate.">▽ Possible cycle peak (trailing cheap, estimates falling)</span>
+                        <span className="bd-flag" title="Cyclical that looks cheap on trailing numbers while forward estimates roll over — possible top-of-cycle behavior, so the label is limited to Mixed signals.">▽ Possible cycle peak (trailing cheap, estimates falling)</span>
                       )}
                       {scored.flags.serviceableLeverage && (
                         <span className="bd-flag" title="D/E is above 2, but interest coverage is strong (≥6×) — the debt is comfortably serviced. Costs Risk points but does not disqualify.">✓ Leverage is serviceable (risk, not disqualifying)</span>
                       )}
                       {scored.flags.softEarningsQuality && (
-                        <span className="bd-flag" title="FCF/NI conversion is in the 0.5–0.7 band — earnings quality is questionable but not unambiguously broken (could be a working-capital swing or capex cycle). Costs Risk and caps the tier at Moderate.">▽ Soft earnings quality (capped at Moderate)</span>
+                        <span className="bd-flag" title="FCF/NI conversion is in the 0.5–0.7 band — earnings quality is unresolved (possibly working capital or capex). It adds Risk and limits the label to Mixed signals.">▽ Soft earnings quality (mixed signals)</span>
                       )}
                       {scored.flags.cyclical && (
                         <span className="bd-flag" title="Cyclical industry — a low forward P/E here often reflects peak earnings, so P/E compression is neutralized.">↻ Cyclical (compression neutralized)</span>
                       )}
                       {scored.flags.crowding && (
-                        <span className="bd-flag" title="Mega-cap trading near its 52-week high — already widely owned, capped at Moderate.">◆ Crowded (near 52W high)</span>
+                        <span className="bd-flag" title="Mega-cap trading near its 52-week high — already widely owned, so the label is limited to Mixed signals.">◆ Crowded (near 52W high)</span>
                       )}
                       {scored.flags.benignEarningsQuality && (
                         <span className="bd-flag" title="FCF trails earnings because revenue is surging (receivables build) and capex is heavy — a growth/capex drag, not a cash-conversion red flag. Scores −3 but does not disqualify.">↗ EQ −3 is a growth drag (not disqualifying)</span>
@@ -381,7 +383,7 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                   </td>
                 </tr>
               )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>

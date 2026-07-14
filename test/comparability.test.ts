@@ -26,8 +26,8 @@ describe('currency comparability', () => {
     expect(mixedCurrency([row(), row({ currency: null })])).toBe(true);
   });
 
-  it('all-unknown or single rows do not trigger the guard', () => {
-    expect(mixedCurrency([row({ currency: null }), row({ currency: null })])).toBe(false);
+  it('all-unknown multi-row sets are conservatively incomparable; a single row is safe', () => {
+    expect(mixedCurrency([row({ currency: null }), row({ currency: null })])).toBe(true);
     expect(mixedCurrency([row({ currency: 'EUR' })])).toBe(false);
   });
 });

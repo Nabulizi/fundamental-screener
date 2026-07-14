@@ -52,14 +52,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Request body must be a bounded JSON object.' }, noStore({ status: 400 }));
   }
 
-  const budget = await takeScanBudget(clientKey(request), body.refresh === true);
-  if (!budget.allowed) {
-    return NextResponse.json(
-      { error: 'Scan request rate limit reached. Please retry later.' },
-      noStore({ status: 429, headers: { 'Retry-After': String(budget.retryAfterSeconds) } })
-    );
-  }
-
   const maxTickers = Number(process.env.MAX_TICKERS) || DEFAULT_MAX_TICKERS;
   const ttlSeconds = cacheTtlSeconds();
 
@@ -83,6 +75,17 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json(empty, noStore({ status: 200 }));
   }
 
+  // Charge by valid ticker count, not HTTP request count. This keeps batching
+  // neutral while bounding actual provider work. Invalid/empty requests never
+  // consume quota-bearing scan capacity.
+  const budget = await takeScanBudget(clientKey(request), body.refresh === true, parsed.valid.length);
+  if (!budget.allowed) {
+    return NextResponse.json(
+      { error: 'Scan request rate limit reached. Please retry later.' },
+      noStore({ status: 429, headers: { 'Retry-After': String(budget.retryAfterSeconds) } })
+    );
+  }
+
   const provider = buildProvider();
   if (!provider) {
     return NextResponse.json(
@@ -95,12 +98,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     const result = await scanTickers(parsed.valid, provider, { ttlSeconds, refresh: body.refresh === true });
     // Longitudinal scan history (first fresh result per ticker per day).
     // recordSnapshots never throws; a snapshot failure never fails the scan.
-    await recordSnapshots(result.rows, { store: getStore() });
+    const snapshotsRecorded = await recordSnapshots(result.rows, { store: getStore() });
     const response: ScanResponse = {
       ...result,
       errors: [...invalidErrors, ...result.errors],
       meta
     };
+    response.telemetry = { ...(response.telemetry ?? { providerCalls: 0, cacheHits: 0, coalescedJoins: 0, failures: 0 }), snapshotsRecorded };
     return NextResponse.json(response, noStore({ status: 200 }));
   } catch {
     // Total failure (e.g. provider unreachable) — generic message, no secrets.

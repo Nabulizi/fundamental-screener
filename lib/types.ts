@@ -88,5 +88,7 @@ export interface ScanResponse {
     cacheHits: number;
     coalescedJoins: number;
     failures: number;
+    /** Fresh daily snapshots successfully appended by this request. */
+    snapshotsRecorded?: number;
   };
 }

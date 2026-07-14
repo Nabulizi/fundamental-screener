@@ -6,6 +6,7 @@ import {
   describeActiveFilters, clearFilter, distinctIndustries, hasActiveFilters, EMPTY_FILTERS
 } from '@/lib/filters';
 import { MAX_STRENGTH, MAX_RISK } from '@/lib/scoring';
+import { distinctCurrencies, mixedCurrency } from '@/lib/comparability';
 
 const BILLION = 1_000_000_000;
 
@@ -21,7 +22,10 @@ interface Props {
 // metric narrowers. Filtering is display-only — it never re-fetches.
 export default function FilterBar({ rows, filters, onChange, shown }: Props) {
   const industries = distinctIndustries(rows);
-  const chips = describeActiveFilters(filters);
+  const capComparable = !mixedCurrency(rows);
+  const knownCurrencies = distinctCurrencies(rows);
+  const capCurrency = knownCurrencies[0] ?? 'local currency';
+  const chips = describeActiveFilters(filters, knownCurrencies[0] ?? null);
 
   const num = (raw: string): number | null => {
     if (raw.trim() === '') return null;
@@ -59,10 +63,11 @@ export default function FilterBar({ rows, filters, onChange, shown }: Props) {
             onChange={(e) => { const n = num(e.target.value); set({ coverageMin: n == null ? null : n / 100 }); }} />
         </label>
         <label>
-          Mkt cap ≥ $B
-          <input type="number" min={0} value={filters.marketCapMin == null ? '' : filters.marketCapMin / BILLION}
+          Mkt cap ≥ {capCurrency} B
+          <input type="number" min={0} disabled={!capComparable} title={capComparable ? undefined : 'Disabled because rows span mixed or unknown currencies'} value={filters.marketCapMin == null ? '' : filters.marketCapMin / BILLION}
             onChange={(e) => { const n = num(e.target.value); set({ marketCapMin: n == null ? null : n * BILLION }); }} />
         </label>
+        {!capComparable && <p className="hint filter-comparability">Market-cap filtering is disabled and any shared cap threshold is ignored until the rows share one known currency.</p>}
         <label>
           P/E ≤
           <input type="number" min={0} value={filters.peMax ?? ''}

@@ -11,5 +11,8 @@ describe('reader-facing scoring methodology contract', () => {
     expect(methodology.maxStrength).toBe(MAX_STRENGTH);
     expect(methodology.maxRisk).toBe(MAX_RISK);
     expect(methodology.criteria.every((c) => c.benchmark.positive && c.benchmark.negative)).toBe(true);
+    expect(methodology.tierRules.map((rule) => rule.label)).toEqual([
+      'Higher alignment', 'Mixed signals', 'Insufficient / flagged'
+    ]);
   });
 });

@@ -120,11 +120,11 @@ export interface ActiveFilterChip {
 }
 
 /** Human-readable chips describing each active filter, for display + per-chip clearing. */
-export function describeActiveFilters(c: FilterCriteria): ActiveFilterChip[] {
+export function describeActiveFilters(c: FilterCriteria, currency: string | null = 'USD'): ActiveFilterChip[] {
   const chips: ActiveFilterChip[] = [];
   if (c.industry) chips.push({ key: 'industry', label: `Industry: ${c.industry}` });
-  if (c.marketCapMin != null) chips.push({ key: 'marketCapMin', label: `Market cap ≥ ${formatMarketCap(c.marketCapMin)}` });
-  if (c.marketCapMax != null) chips.push({ key: 'marketCapMax', label: `Market cap ≤ ${formatMarketCap(c.marketCapMax)}` });
+  if (c.marketCapMin != null) chips.push({ key: 'marketCapMin', label: `Market cap ≥ ${formatMarketCap(c.marketCapMin, currency)}` });
+  if (c.marketCapMax != null) chips.push({ key: 'marketCapMax', label: `Market cap ≤ ${formatMarketCap(c.marketCapMax, currency)}` });
   if (c.peMin != null) chips.push({ key: 'peMin', label: `P/E ≥ ${c.peMin}` });
   if (c.peMax != null) chips.push({ key: 'peMax', label: `P/E ≤ ${c.peMax}` });
   if (c.dividendYieldMin != null) chips.push({ key: 'dividendYieldMin', label: `Div yield ≥ ${formatPercent(c.dividendYieldMin)}` });

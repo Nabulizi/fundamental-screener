@@ -13,7 +13,7 @@ const SYMBOLS: Record<string, string> = {
 };
 
 function symbolFor(currency: string | null | undefined): string {
-  if (!currency) return '$';
+  if (!currency) return '¤';
   return SYMBOLS[currency] ?? `${currency} `;
 }
 

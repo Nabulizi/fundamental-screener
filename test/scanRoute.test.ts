@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from '@/app/api/scan/route';
-import { clearScanBudgets, setScanRateLimiter } from '@/lib/requestGuard';
+import { clearScanBudgets, consumeScanBudget, setScanRateLimiter } from '@/lib/requestGuard';
 
-// API-level guard behavior: these requests never reach a provider (empty
-// ticker input short-circuits after the budget check), so no network or key
-// is involved.
+// API-level guard behavior. Rejected requests never reach a provider.
 function scanRequest(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request('http://localhost/api/scan', {
     method: 'POST',
@@ -34,22 +32,16 @@ describe('POST /api/scan guard behavior', () => {
   });
 
   it('returns 429 with Retry-After once the refresh budget is exhausted', async () => {
-    for (let i = 0; i < 6; i++) {
-      const ok = await POST(scanRequest({ input: '', refresh: true }, { 'x-forwarded-for': '9.9.9.9' }));
-      expect(ok.status).toBe(200);
-    }
-    const denied = await POST(scanRequest({ input: '', refresh: true }, { 'x-forwarded-for': '9.9.9.9' }));
+    expect(consumeScanBudget('anonymous-global', true, Date.now(), 20).allowed).toBe(true);
+    const denied = await POST(scanRequest({ input: 'AAPL', refresh: true }));
     expect(denied.status).toBe(429);
     expect(Number(denied.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
     expect(denied.headers.get('Cache-Control')).toBe('no-store');
-    // A different client is not affected.
-    const other = await POST(scanRequest({ input: '', refresh: true }, { 'x-forwarded-for': '8.8.8.8' }));
-    expect(other.status).toBe(200);
   });
 
   it('honors a registered shared limiter at the route level', async () => {
     setScanRateLimiter({ consume: async () => ({ allowed: false, retryAfterSeconds: 42 }) });
-    const res = await POST(scanRequest({ input: '' }));
+    const res = await POST(scanRequest({ input: 'AAPL' }));
     expect(res.status).toBe(429);
     expect(res.headers.get('Retry-After')).toBe('42');
   });

@@ -15,6 +15,8 @@ export interface ClientScanResult {
 export interface ClientScanOptions {
   refresh?: boolean;
   concurrency?: number;
+  /** Tickers per HTTP request. Defaults to 4 so a 20-name refresh fits its budget. */
+  batchSize?: number;
   signal?: AbortSignal;
   onProgress?: (p: ScanProgress) => void;
   /** Fired as each row arrives, in completion (not input) order. */
@@ -43,6 +45,7 @@ export async function runClientScan(
 ): Promise<ClientScanResult> {
   const doFetch = opts.fetchImpl ?? fetch;
   const concurrency = Math.max(1, opts.concurrency ?? 3);
+  const batchSize = Math.max(1, Math.floor(opts.batchSize ?? 4));
   const total = tickers.length;
   let completed = 0;
 
@@ -53,13 +56,14 @@ export async function runClientScan(
   async function worker(): Promise<void> {
     while (cursor < tickers.length) {
       if (opts.signal?.aborted) return; // cancelled — start no further requests
-      const ticker = tickers[cursor];
-      cursor += 1;
+      const batch = tickers.slice(cursor, cursor + batchSize);
+      cursor += batch.length;
+      let settled = false;
       try {
         const res = await doFetch('/api/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input: ticker, refresh: opts.refresh === true }),
+          body: JSON.stringify({ tickers: batch, refresh: opts.refresh === true }),
           signal: opts.signal
         });
         if (res.ok) {
@@ -69,22 +73,41 @@ export async function runClientScan(
             opts.onRow?.(row);
           }
           if (payload.errors && payload.errors.length > 0) {
-            errorsByTicker.set(ticker, payload.errors);
-            for (const e of payload.errors) opts.onError?.(e);
+            for (const e of payload.errors) {
+              const current = errorsByTicker.get(e.ticker) ?? [];
+              errorsByTicker.set(e.ticker, [...current, e]);
+              opts.onError?.(e);
+            }
           }
         } else {
-          const error: ScanError = { ticker, code: 'PROVIDER_ERROR', message: `Request failed (HTTP ${res.status}).` };
+          const retryAfter = res.headers.get('Retry-After');
+          const code: ScanError['code'] = res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_ERROR';
+          for (const ticker of batch) {
+            const error: ScanError = {
+              ticker,
+              code,
+              message: res.status === 429
+                ? `Request rate limit reached${retryAfter ? `; retry after ${retryAfter}s` : ''}.`
+                : `Request failed (HTTP ${res.status}).`,
+            };
+            errorsByTicker.set(ticker, [error]);
+            opts.onError?.(error);
+          }
+        }
+        settled = true;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return; // cancelled mid-request
+        for (const ticker of batch) {
+          const error: ScanError = { ticker, code: 'PROVIDER_ERROR', message: 'Network error.' };
           errorsByTicker.set(ticker, [error]);
           opts.onError?.(error);
         }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return; // cancelled mid-request
-        const error: ScanError = { ticker, code: 'PROVIDER_ERROR', message: 'Network error.' };
-        errorsByTicker.set(ticker, [error]);
-        opts.onError?.(error);
+        settled = true;
       } finally {
-        completed += 1;
-        opts.onProgress?.({ completed, total });
+        if (settled) {
+          completed += batch.length;
+          opts.onProgress?.({ completed, total });
+        }
       }
     }
   }

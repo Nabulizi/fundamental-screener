@@ -19,6 +19,8 @@ export function useValuationCases(): UseValuationCases {
 
   useEffect(() => {
     try {
+      // localStorage is client-only; hydrate after mount to keep SSR deterministic.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCases(parseStored(window.localStorage.getItem(STORAGE_KEY)));
     } catch {
       setCases([]);

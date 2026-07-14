@@ -30,9 +30,9 @@ export function getScoringMethodology() {
       benchmark: CRITERION_BENCHMARK[key],
     })),
     tierRules: [
-      { label: 'Strong', rule: `Strength ≥ 12, with no hard floor or cap` },
-      { label: 'Moderate', rule: 'Strength ≥ 7, or a cap applies' },
-      { label: 'Weak', rule: `Strength < 7, Risk ≥ ${RISK_FLOOR}, insufficient data, or a hard floor` },
+      { key: 'strong', label: 'Higher alignment', rule: `Strength ≥ 12, with no hard floor or limiting flag` },
+      { key: 'moderate', label: 'Mixed signals', rule: 'Strength ≥ 7, or a limiting flag applies' },
+      { key: 'weak', label: 'Insufficient / flagged', rule: `Strength < 7, Risk ≥ ${RISK_FLOOR}, insufficient data, or a hard floor` },
     ],
   } as const;
 }

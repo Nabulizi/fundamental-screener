@@ -113,20 +113,27 @@ async function doRecord(rows: ScanRow[], opts: SnapshotOptions, filePath: string
     await (opts.mkdirImpl ?? mkdir)(path.dirname(filePath), { recursive: true });
     await (opts.appendFileImpl ?? appendFile)(filePath, payload, 'utf8');
 
+    // JSONL is the primary append-only record. Mark it committed immediately so
+    // a secondary-store failure cannot cause duplicate lines on the next call.
+    for (const r of fresh) seen.add(r.ticker);
+
     // Durable store (SQLite) in addition to the JSONL backup. Never lets a store
     // failure break the snapshot — the outer try/catch also guards it.
     if (opts.store) {
-      for (const row of fresh) {
-        const s = scoreRow(row);
-        await opts.store.putSnapshot({
-          ticker: row.ticker, day: date, scoringVersion: SCORING_VERSION,
-          tier: s.tier, strength: s.strengthScore, risk: s.riskScore,
-          row, retrievedAt: row.retrievedAt,
-        });
+      try {
+        for (const row of fresh) {
+          const s = scoreRow(row);
+          await opts.store.putSnapshot({
+            ticker: row.ticker, day: date, scoringVersion: SCORING_VERSION,
+            tier: s.tier, strength: s.strengthScore, risk: s.riskScore,
+            row, retrievedAt: row.retrievedAt,
+          });
+        }
+      } catch (err) {
+        console.warn(`[snapshots] durable-store write failed after JSONL commit: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
-    for (const r of fresh) seen.add(r.ticker);
     return fresh.length;
   } catch (err) {
     console.warn(`[snapshots] failed to record: ${err instanceof Error ? err.message : String(err)}`);
