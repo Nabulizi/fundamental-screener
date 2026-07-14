@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useMemo, useState, useCallback } from 'react';
+import { Fragment, type ReactNode, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type { ScanRow } from '@/lib/types';
 import { type SortDir, type SortKey } from '@/lib/sort';
@@ -265,8 +265,8 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
             const eqDisqualifies = !!causes?.earningsQuality;
             const levDisqualifies = !!causes?.leverage;
             return (
-              <>
-              <tr key={row.ticker} className={`row-${tier}`}>
+              <Fragment key={row.ticker}>
+              <tr className={`row-${tier}`}>
                 {COLUMNS.map((col, idx) => {
                   if (col.identity) {
                     return (
@@ -383,7 +383,7 @@ export default function ResultsTable({ rows, lastUpdatedAt, sortKey, sortDir, on
                   </td>
                 </tr>
               )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>
