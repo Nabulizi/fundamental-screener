@@ -55,6 +55,15 @@ export const EVIDENCE_REGISTRY: EvidenceEntry[] = [
     scoringVersion: 5,
   },
   {
+    id: 'scorecard-v5-smallcap-returns',
+    claim: 'The v5 scorecard also selects outperformers within US small caps (market-cap ranks 501–1500).',
+    verdict: 'supported-within-scope',
+    scope:
+      'Preregistered test QR-009 (quant-research repo): Strong-tier equal-weight in the 501–1500 band with a $2M/day liquidity floor, 2011–2022 net of 25 bps costs, beat all 100 random controls and the band top-100; selection alpha +3.7%/yr vs its band (t=3.4), +4.9%/yr vs IWM. Within-band only — vs SPY the alpha is 0.0%/yr (beta 1.11): the strategy fully inherits small-cap asset-class returns, which lagged mega caps this era. Not a prediction or trading advice.',
+    source: 'docs/qr009-validation.md',
+    asOf: '2026-07-15',
+  },
+  {
     id: 'scorecard-v4-returns',
     claim: 'The 12-criterion scorecard (Strength/Risk, methodology v4) predicts cross-sectional excess returns.',
     verdict: 'untested',
