@@ -47,11 +47,11 @@ export const EVIDENCE_REGISTRY: EvidenceEntry[] = [
   {
     id: 'scorecard-v5-returns',
     claim: 'The 12-criterion scorecard (Strength/Risk, methodology v5) predicts cross-sectional excess returns.',
-    verdict: 'untested',
+    verdict: 'supported-within-scope',
     scope:
-      'Version 5 adds fail-closed sanity bounds so implausible provider values cannot influence scoring. This is a data-integrity change, not evidence of predictive validity; no point-in-time return test of v5 exists.',
-    source: 'docs/scoring-changelog.md',
-    asOf: '2026-07-12',
+      'Preregistered point-in-time test QR-008 (quant-research repo): Strong-tier equal-weight, top-500 US universe, 2011–2022 net of costs beat all 100 random controls and EW-top-100 (Sharpe 1.04 vs 0.82), selection alpha +4.2%/yr vs its own universe (t=3.8), beta ≈ 0.96. Covers that construction and window only — 2023–2026 matched equal-weight and lagged cap-weighted SPY; not a prediction or trading advice. Under prospective shadow observation since 2026-08.',
+    source: 'docs/qr008-validation.md',
+    asOf: '2026-07-15',
     scoringVersion: 5,
   },
   {
